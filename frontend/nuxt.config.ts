@@ -24,6 +24,7 @@ export default defineNuxtConfig({
       meta: [
         { name: 'description', content: 'Biết thời tiết trên từng chặng đường' },
         { name: 'theme-color', content: '#0f172a' },
+        { name: 'mobile-web-app-capable', content: 'yes' },
         { name: 'apple-mobile-web-app-capable', content: 'yes' },
         { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' },
       ],
@@ -32,7 +33,11 @@ export default defineNuxtConfig({
         { rel: 'manifest', href: '/manifest.json' },
       ],
       script: [
-        { innerHTML: "if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js')}", type: 'text/javascript' },
+        {
+          innerHTML:
+            "if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('/sw.js').catch(()=>{})})}",
+          type: 'text/javascript',
+        },
       ],
     },
   },

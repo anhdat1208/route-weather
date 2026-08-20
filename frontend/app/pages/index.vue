@@ -403,13 +403,20 @@ async function ensureMap() {
   if (!process.client || map.value || !mapEl.value) return
   maplibreModule = await import("maplibre-gl")
   await import("maplibre-gl/dist/maplibre-gl.css")
+  // Wait a tick so the container has layout (important when tab/panel remounts).
+  await new Promise((r) => requestAnimationFrame(() => r(null)))
+  if (!mapEl.value) return
   map.value = new maplibreModule.Map({
     container: mapEl.value,
     style: config.public.mapStyleUrl,
     center: [106.67, 10.78],
     zoom: 11,
   })
-  map.value.addControl(new maplibreModule.NavigationControl(), "right")
+  try {
+    map.value.addControl(new maplibreModule.NavigationControl(), "right")
+  } catch {
+    // Container may be detached during SSR/hydration races; map still usable.
+  }
 }
 
 function drawRoute() {
