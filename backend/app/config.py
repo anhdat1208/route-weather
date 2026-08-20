@@ -1,20 +1,24 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
 
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Prefer backend/.env, then monorepo root .env. On Vercel, env vars come from dashboard.
-_BACKEND_ROOT = Path(__file__).resolve().parents[1]
-_ENV_CANDIDATES: list[Path] = [_BACKEND_ROOT / ".env"]
-try:
-    _ENV_CANDIDATES.append(Path(__file__).resolve().parents[2] / ".env")
-except IndexError:
-    pass
-_ENV_FILES = tuple(str(p) for p in _ENV_CANDIDATES if p.is_file())
+
+def _env_files() -> tuple[str, ...]:
+    candidates = [
+        Path(".env"),
+        Path(__file__).resolve().parents[1] / ".env",  # backend/.env
+    ]
+    try:
+        candidates.append(Path(__file__).resolve().parents[2] / ".env")  # monorepo root
+    except IndexError:
+        pass
+    return tuple(str(p) for p in candidates if p.is_file())
 
 
 class Settings(BaseSettings):
+    # On Vercel, configure env vars in the dashboard. Locally, .env is optional.
     model_config = SettingsConfigDict(
-        env_file=_ENV_FILES if _ENV_FILES else None,
+        env_file=_env_files() or None,
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -22,17 +26,14 @@ class Settings(BaseSettings):
     # GraphHopper
     graphhopper_api_key: str = ""
     graphhopper_base_url: str = "https://graphhopper.com/api/1"
-    # GraphHopper free plan often only supports `car`, `bike`, `foot` profiles.
-    # Use `motorcycle` only if your plan includes it.
     graphhopper_motorbike_profile: str = "bike"
-    # Bias geocode results toward Vietnam (minLon,minLat,maxLon,maxLat).
     geocode_bbox: str = "102.1,8.2,109.5,23.4"
 
     # Open-Meteo
     open_meteo_base_url: str = "https://api.open-meteo.com/v1"
 
-    # Database
-    database_url: str = "postgresql://routeweather:routeweather@localhost:5432/routeweather"
+    # Database (unused in MVP)
+    database_url: str = ""
 
     # Cache TTL (seconds)
     cache_ttl_route: int = 86400
@@ -52,7 +53,7 @@ class Settings(BaseSettings):
     # Server
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3000,https://route-weather-tracking.vercel.app"
 
     @property
     def cors_origin_list(self) -> list[str]:
