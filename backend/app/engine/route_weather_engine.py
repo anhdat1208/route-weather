@@ -253,7 +253,9 @@ class RouteWeatherEngine:
                     raise
                 return None
 
-        raw = await asyncio.gather(*[compute_one(o) for o in offsets_minutes])
+        raw = []
+        for o in offsets_minutes:
+            raw.append(await compute_one(o))
         results = [r for r in raw if r is not None]
         results.sort(key=lambda x: x[0])
         return results

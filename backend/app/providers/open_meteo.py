@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -10,13 +11,15 @@ logger = logging.getLogger(__name__)
 
 from app.config import settings
 from app.providers.base import WeatherProvider
-from app.providers.errors import ProviderNotConfiguredError, WeatherNotAvailableError
+from app.providers.errors import WeatherNotAvailableError
 from app.schemas.weather import WeatherSnapshot
+
+# Open-Meteo free tier rejects large concurrent bursts (HTTP 429).
+_OPEN_METEO_SEM = asyncio.Semaphore(2)
 
 
 def _parse_open_meteo_time(s: str) -> datetime:
     # Open-Meteo typically returns "YYYY-MM-DDTHH:00" in the chosen timezone.
-    # Using fromisoformat keeps it naive; we compare it to the naive target hour.
     return datetime.fromisoformat(s)
 
 
@@ -24,7 +27,6 @@ def _condition_from_weather_code(code: int | None) -> str | None:
     if code is None:
         return None
 
-    # WMO weather interpretation codes (Open-Meteo: "weather_code").
     if code == 0:
         return "Quang"
     if code in (1, 2, 3):
@@ -73,7 +75,6 @@ def _nearest_hour_index(times: list[str], target_hour: datetime) -> int | None:
         if parsed == target_hour:
             return i
 
-    # Clamp to available forecast window (past hours / slight drift).
     best_i, best_dt = min(parsed_times, key=lambda item: abs((item[1] - target_hour).total_seconds()))
     if abs((best_dt - target_hour).total_seconds()) <= 6 * 3600:
         return best_i
@@ -92,7 +93,6 @@ class OpenMeteoProvider(WeatherProvider):
         self._cache: dict[tuple[float, float, datetime], tuple[WeatherSnapshot, float]] = {}
 
     async def get_forecast_at(self, *, lat: float, lng: float, time: datetime) -> WeatherSnapshot:
-        # MVP scope: primarily "Today + custom departure time".
         target_hour = _to_bangkok_naive(time)
         cache_key = (round(lat, 3), round(lng, 3), target_hour)
 
@@ -124,12 +124,24 @@ class OpenMeteoProvider(WeatherProvider):
         }
 
         url = f"{self._base_url}/forecast"
+        payload: dict[str, Any] | None = None
 
-        resp = await self._client.get(url, params=params)
-        if resp.status_code != 200:
-            raise WeatherNotAvailableError(f"Open-Meteo failed: {resp.status_code} {resp.text}")
+        async with _OPEN_METEO_SEM:
+            last_error = ""
+            for attempt in range(4):
+                resp = await self._client.get(url, params=params)
+                if resp.status_code == 200:
+                    payload = resp.json()
+                    break
+                last_error = f"{resp.status_code} {resp.text}"
+                if resp.status_code == 429 and attempt < 3:
+                    await asyncio.sleep(0.6 * (attempt + 1))
+                    continue
+                raise WeatherNotAvailableError(f"Open-Meteo failed: {last_error}")
 
-        payload = resp.json()
+        if payload is None:
+            raise WeatherNotAvailableError(f"Open-Meteo failed: {last_error}")
+
         hourly = payload.get("hourly") or {}
         times = hourly.get("time") or []
         if not times:
@@ -155,10 +167,8 @@ class OpenMeteoProvider(WeatherProvider):
                 return float(v) if isinstance(v, (int, float)) else None
             return None
 
-        # visibility is in meters
         visibility_m = pick("visibility")
         visibility_km = visibility_m / 1000.0 if visibility_m is not None else None
-
         weather_code = pick("weather_code")
 
         snapshot = WeatherSnapshot(
@@ -177,4 +187,3 @@ class OpenMeteoProvider(WeatherProvider):
         expires_at = now_ts + settings.cache_ttl_weather
         self._cache[cache_key] = (snapshot, expires_at)
         return snapshot
-
