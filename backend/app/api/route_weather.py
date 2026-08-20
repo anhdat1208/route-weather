@@ -96,13 +96,13 @@ async def route_weather(request: RouteWeatherRequest) -> RouteWeatherResponse:
         raise HTTPException(status_code=503, detail=str(e))
     except ProviderRequestError as e:
         raise HTTPException(status_code=502, detail=str(e))
-    except WeatherNotAvailableError:
+    except WeatherNotAvailableError as e:
         raise HTTPException(
             status_code=503,
-            detail="Lộ trình đã tìm được, nhưng thông tin thời tiết tạm thời không khả dụng cho thời gian đã chọn.",
+            detail=f"Lộ trình đã tìm được, nhưng thông tin thời tiết tạm thời không khả dụng cho thời gian đã chọn. ({e})",
         )
-    except Exception:
-        raise HTTPException(status_code=500, detail="Tính lộ trình & thời tiết thất bại")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Tính lộ trình & thời tiết thất bại: {type(e).__name__}: {e}")
 
 
 @router.post("/api/route-weather/compare", response_model=RouteWeatherCompareResponse)

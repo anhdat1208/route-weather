@@ -42,8 +42,25 @@ except Exception as exc:  # noqa: BLE001 - surface boot failures on Vercel
     )
 
 
-@app.get("/api/health")
-async def health_check() -> dict:
+@app.get("/api/debug/weather")
+async def debug_weather(lat: float = 10.74, lng: float = 106.69) -> dict:
+    """Temporary diagnostics for Open-Meteo connectivity on Vercel."""
+    from datetime import datetime
+
+    from app.providers.open_meteo import OpenMeteoProvider
+
+    provider = OpenMeteoProvider()
+    try:
+        snap = await provider.get_forecast_at(lat=lat, lng=lng, time=datetime.now())
+        return {
+            "ok": True,
+            "time": snap.time.isoformat(),
+            "temperature_c": snap.temperature_c,
+            "precipitation_probability_pct": snap.precipitation_probability_pct,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
     if _boot_error:
         return {
             "status": "error",
