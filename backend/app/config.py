@@ -2,13 +2,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-ENV_PATH = PROJECT_ROOT / ".env"
+# Local monorepo: backend/app/config.py → repo root .env
+# Vercel (Root Directory=backend): env vars come from dashboard; .env may be absent.
+_BACKEND_ROOT = Path(__file__).resolve().parents[1]
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_ENV_CANDIDATES = [_REPO_ROOT / ".env", _BACKEND_ROOT / ".env"]
+_ENV_FILES = [str(p) for p in _ENV_CANDIDATES if p.is_file()]
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=str(ENV_PATH),
+        env_file=_ENV_FILES or None,
         env_file_encoding="utf-8",
         extra="ignore",
     )
