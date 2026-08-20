@@ -267,7 +267,13 @@ const originSelected = ref<GeocodeResult | null>(null)
 const destinationSelected = ref<GeocodeResult | null>(null)
 
 const travelMode = ref<"motorbike" | "walking">("motorbike")
-const departureLocal = ref(new Date(Date.now() + 15 * 60 * 1000).toISOString().slice(0, 16))
+
+function toLocalDateTimeInputValue(date: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+const departureLocal = ref(toLocalDateTimeInputValue(new Date(Date.now() + 15 * 60 * 1000)))
 
 const routeWeather = ref<RouteWeatherResponse | null>(null)
 const activeTab = ref<"map" | "timeline" | "compare">("map")

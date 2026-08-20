@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -44,6 +44,42 @@ def _condition_from_weather_code(code: int | None) -> str | None:
     return "Khác"
 
 
+def _to_bangkok_naive(time: datetime) -> datetime:
+    """Normalize request time to Asia/Bangkok naive hours for Open-Meteo matching."""
+    if time.tzinfo is None:
+        return time.replace(minute=0, second=0, microsecond=0)
+    try:
+        from zoneinfo import ZoneInfo
+
+        local = time.astimezone(ZoneInfo("Asia/Bangkok"))
+        return local.replace(tzinfo=None, minute=0, second=0, microsecond=0)
+    except Exception:
+        utc = time.astimezone(timezone.utc)
+        local = (utc + timedelta(hours=7)).replace(tzinfo=None)
+        return local.replace(minute=0, second=0, microsecond=0)
+
+
+def _nearest_hour_index(times: list[str], target_hour: datetime) -> int | None:
+    parsed_times: list[tuple[int, datetime]] = []
+    for i, t in enumerate(times):
+        try:
+            parsed_times.append((i, _parse_open_meteo_time(t).replace(tzinfo=None)))
+        except ValueError:
+            continue
+    if not parsed_times:
+        return None
+
+    for i, parsed in parsed_times:
+        if parsed == target_hour:
+            return i
+
+    # Clamp to available forecast window (past hours / slight drift).
+    best_i, best_dt = min(parsed_times, key=lambda item: abs((item[1] - target_hour).total_seconds()))
+    if abs((best_dt - target_hour).total_seconds()) <= 6 * 3600:
+        return best_i
+    return None
+
+
 class OpenMeteoProvider(WeatherProvider):
     def __init__(
         self,
@@ -57,9 +93,7 @@ class OpenMeteoProvider(WeatherProvider):
 
     async def get_forecast_at(self, *, lat: float, lng: float, time: datetime) -> WeatherSnapshot:
         # MVP scope: primarily "Today + custom departure time".
-        # Open-Meteo "forecast" should include times within the next couple of days.
-        # Strip tzinfo so comparison with naive Open-Meteo times works.
-        target_hour = time.replace(minute=0, second=0, microsecond=0, tzinfo=None)
+        target_hour = _to_bangkok_naive(time)
         cache_key = (round(lat, 3), round(lng, 3), target_hour)
 
         now_ts = datetime.now().timestamp()
@@ -86,7 +120,7 @@ class OpenMeteoProvider(WeatherProvider):
                 ]
             ),
             "timezone": "Asia/Bangkok",
-            "forecast_days": 2,
+            "forecast_days": 3,
         }
 
         url = f"{self._base_url}/forecast"
@@ -101,24 +135,18 @@ class OpenMeteoProvider(WeatherProvider):
         if not times:
             raise WeatherNotAvailableError("Open-Meteo response missing hourly.time")
 
-        # Find exact hour match; if not found, we treat it as unavailable for strictness.
-        target_key = target_hour.isoformat(timespec="minutes")
-        idx = None
-        for i, t in enumerate(times):
-            try:
-                parsed = _parse_open_meteo_time(t)
-            except ValueError:
-                continue
-            if parsed == target_hour:
-                idx = i
-                break
-
+        idx = _nearest_hour_index(times, target_hour)
         if idx is None:
             logger.warning(
                 "Open-Meteo hour mismatch: target=%s, available range=%s..%s (%d entries)",
-                target_hour.isoformat(), times[0] if times else "?", times[-1] if times else "?", len(times),
+                target_hour.isoformat(),
+                times[0] if times else "?",
+                times[-1] if times else "?",
+                len(times),
             )
             raise WeatherNotAvailableError("Open-Meteo forecast not available for requested hour.")
+
+        matched_hour = _parse_open_meteo_time(times[idx]).replace(tzinfo=None)
 
         def pick(name: str) -> float | None:
             arr = hourly.get(name)
@@ -134,7 +162,7 @@ class OpenMeteoProvider(WeatherProvider):
         weather_code = pick("weather_code")
 
         snapshot = WeatherSnapshot(
-            time=target_hour,
+            time=matched_hour,
             weather_code=int(weather_code) if weather_code is not None else None,
             condition=_condition_from_weather_code(int(weather_code)) if weather_code is not None else None,
             temperature_c=pick("temperature_2m"),
