@@ -22,9 +22,8 @@ class RouteWeatherRequest(BaseModel):
     origin_label: str | None = None
     destination_label: str | None = None
 
-    # Nếu muốn, backend có thể reverse-geocode điểm trên route để lấy tên.
-    # MVP mặc định có thể bật/tắt qua config bên backend.
-    geocode_route_points: bool | None = None
+    # Reverse-geocode điểm trên lộ trình để hiện tên đường/khu vực trên timeline.
+    geocode_route_points: bool | None = True
 
 
 class PrecipitationRiskLabel(BaseModel):

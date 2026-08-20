@@ -63,8 +63,8 @@ def _build_recommendation(
 
 @router.post("/api/route-weather", response_model=RouteWeatherResponse)
 async def route_weather(request: RouteWeatherRequest) -> RouteWeatherResponse:
-    # For timeline labels: only enable reverse geocode when explicitly requested and GraphHopper has key.
-    geocode_enabled = bool(request.geocode_route_points)
+    # Timeline labels: reverse-geocode unless explicitly disabled.
+    geocode_enabled = request.geocode_route_points is not False
     if geocode_enabled and not settings.graphhopper_api_key:
         geocode_enabled = False
 

@@ -8,6 +8,7 @@ from typing import Any
 from app.config import settings
 from app.engine.eta import compute_eta
 from app.engine.geo_math import cumulative_distances_m, slice_geometry_by_distance_m
+from app.engine.geocode_helpers import format_route_distance_label
 from app.engine.risk import compute_risk_score, compute_segment_risk, overall_route_risk, precipitation_probability_label, risk_level_from_score
 from app.engine.sampler import sample_points_by_distance
 from app.providers.base import GeocodeProvider, RouteProvider, WeatherProvider
@@ -104,7 +105,7 @@ class RouteWeatherEngine:
                 return None
             return res.label if res else None
 
-        label_mode = request.geocode_route_points if request.geocode_route_points is not None else False
+        label_mode = request.geocode_route_points is not False
         labels: list[str | None] = [None] * len(samples)
         if label_mode and self.geocode_provider:
             label_tasks = [get_label(i, eta.sample.point) for i, eta in enumerate(eta_points)]
@@ -162,8 +163,14 @@ class RouteWeatherEngine:
 
         summary = "Bạn có thể gặp mưa trên tuyến đường."
         if worst_idx is not None:
-            worst_label = segments[worst_idx].label or f"đoạn {worst_idx + 1}"
-            summary = f"Đoạn nguy cơ cao nhất: {worst_label}."
+            start_label = labels[worst_idx] or (request.origin_label if worst_idx == 0 else None)
+            end_label = labels[worst_idx + 1] or (
+                request.destination_label if worst_idx + 1 == len(samples) - 1 else None
+            )
+            if start_label and end_label:
+                summary = f"Đoạn nguy cơ cao nhất: {start_label} → {end_label}."
+            else:
+                summary = f"Đoạn nguy cơ cao nhất: Đoạn {worst_idx + 1}."
 
         # 5) Timeline points
         timeline: list[RouteWeatherTimelinePoint] = []
@@ -189,7 +196,7 @@ class RouteWeatherEngine:
                     index=i,
                     arrival_time=eta.arrival_time,
                     distance_km=samples[i].distance_m / 1000.0,
-                    label=label or (request.origin_label if i == 0 else None) or f"Điểm {i + 1}",
+                    label=label or (request.origin_label if i == 0 else None) or format_route_distance_label(samples[i].distance_m / 1000.0),
                     weather=snap,
                     precipitation_probability_pct=prob,
                     precipitation_label=precip_label,
@@ -236,6 +243,8 @@ class RouteWeatherEngine:
         async def compute_one(offset: int):
             payload = request.model_dump()
             payload["departure_time"] = request.departure_time + timedelta(minutes=offset)
+            if offset != 0:
+                payload["geocode_route_points"] = False
             alt_req = RouteWeatherRequest(**payload)
             try:
                 return offset, await self._compute_from_route(alt_req, route_result)

@@ -12,6 +12,10 @@ class GeocodeResult(BaseModel):
 
     label: str = Field(..., description="Tên hiển thị (address/place name)")
     point: LatLng
+    approximate: bool = Field(
+        default=False,
+        description="True nếu tọa độ chỉ khớp mức tên đường/khu vực, không có số nhà chính xác.",
+    )
 
 
 class GeocodeSearchRequest(BaseModel):

@@ -18,6 +18,7 @@
               @click="selectOrigin(item)"
             >
               {{ item.label }}
+              <span v-if="item.approximate" class="ml-1 text-[10px] text-amber-300">(gần đúng theo tên đường)</span>
             </button>
           </div>
         </div>
@@ -33,6 +34,7 @@
               @click="selectDestination(item)"
             >
               {{ item.label }}
+              <span v-if="item.approximate" class="ml-1 text-[10px] text-amber-300">(gần đúng theo tên đường)</span>
             </button>
           </div>
         </div>
@@ -91,7 +93,7 @@
           </div>
           <div>
             <p class="text-sm font-medium">{{ routeWeather ? riskLabel(routeWeather.risk.level) : "Chưa có dữ liệu" }}</p>
-            <p class="text-xs text-slate-400">{{ routeWeather?.risk.summary ?? "Nhập lộ trình để xem rủi ro." }}</p>
+            <p class="text-xs text-slate-400">{{ worstSegmentCaption ?? routeWeather?.risk.summary ?? "Nhập lộ trình để xem rủi ro." }}</p>
           </div>
         </div>
       </div>
@@ -140,8 +142,8 @@
         <div class="border-t border-slate-700/50 p-4">
           <div class="mb-3 flex items-center justify-between">
             <h2 class="text-sm font-semibold text-slate-200">Thời tiết trên lộ trình</h2>
-            <span v-if="routeWeather && routeWeather.risk.worst_segment_index !== null" class="text-xs text-orange-300">
-              Đoạn nguy cơ cao nhất: Đoạn {{ routeWeather.risk.worst_segment_index + 1 }}
+            <span v-if="worstSegmentCaption" class="text-xs text-orange-300">
+              {{ worstSegmentCaption }}
             </span>
           </div>
 
@@ -223,7 +225,7 @@ import { useDebounceFn } from "@vueuse/core"
 import type maplibregl from "maplibre-gl"
 
 type LatLng = { lat: number; lng: number }
-type GeocodeResult = { label: string; point: LatLng }
+type GeocodeResult = { label: string; point: LatLng; approximate?: boolean }
 type RiskLevel = "very_low" | "low" | "moderate" | "high" | "very_high"
 
 type RouteWeatherResponse = {
@@ -287,6 +289,16 @@ const gaugeDashOffset = computed(() => {
 const worstPointIndex = computed(() => {
   const idx = routeWeather.value?.risk.worst_segment_index
   return idx === null || idx === undefined ? -1 : idx + 1
+})
+
+const worstSegmentCaption = computed(() => {
+  const data = routeWeather.value
+  const idx = data?.risk.worst_segment_index
+  if (idx === null || idx === undefined || !data?.timeline?.length) return null
+  const start = data.timeline[idx]?.label
+  const end = data.timeline[idx + 1]?.label
+  if (!start || !end) return data.risk.summary || `Đoạn nguy cơ cao nhất: Đoạn ${idx + 1}`
+  return `Đoạn nguy cơ cao nhất: ${start} → ${end}`
 })
 
 const riskBarSegments = computed(() => {
@@ -498,6 +510,7 @@ async function runRouteWeather() {
         destination_label: destinationSelected.value.label,
         departure_time: depIso,
         travel_mode: travelMode.value,
+        geocode_route_points: true,
       },
     })
     await ensureMap()

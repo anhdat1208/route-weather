@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     # GraphHopper free plan often only supports `car`, `bike`, `foot` profiles.
     # Use `motorcycle` only if your plan includes it.
     graphhopper_motorbike_profile: str = "bike"
+    # Bias geocode results toward Vietnam (minLon,minLat,maxLon,maxLat).
+    geocode_bbox: str = "102.1,8.2,109.5,23.4"
 
     # Open-Meteo
     open_meteo_base_url: str = "https://api.open-meteo.com/v1"

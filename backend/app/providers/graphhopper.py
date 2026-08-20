@@ -6,6 +6,13 @@ from typing import Any
 import httpx
 
 from app.config import settings
+from app.engine.geocode_helpers import (
+    build_address_label,
+    build_timeline_label,
+    parse_leading_house_number,
+    prefer_local_hits,
+    result_has_house_number,
+)
 from app.providers.base import GeocodeProvider, RouteProvider, RouteResult
 from app.providers.errors import ProviderNotConfiguredError, ProviderRequestError
 from app.schemas.common import LatLng, TravelMode
@@ -28,13 +35,37 @@ class GraphHopperGeocodeProvider(GeocodeProvider):
         if not self._api_key:
             raise ProviderNotConfiguredError("GraphHopper API key is missing.")
 
+        query = q.strip()
+        if not query:
+            return []
+
+        results = self._hits_to_results(await self._fetch_hits(query, limit))
+        house_number, street_query = parse_leading_house_number(query)
+        if house_number and street_query:
+            has_exact = any(result_has_house_number(r.label, house_number) for r in results)
+            if not has_exact:
+                street_hits = await self._fetch_hits(street_query, limit)
+                street_hit = self._pick_best_street_hit(street_hits, street_query)
+                if street_hit is not None:
+                    lat, lng = self._extract_lat_lng(street_hit)
+                    fallback = GeocodeResult(
+                        label=query,
+                        point=LatLng(lat=lat, lng=lng),
+                        approximate=True,
+                    )
+                    results = [fallback, *results]
+
+        return results[:limit]
+
+    async def _fetch_hits(self, q: str, limit: int) -> list[dict[str, Any]]:
         params: dict[str, Any] = {
             "q": q,
             "limit": limit,
+            "reverse": "false",
+            "key": self._api_key,
         }
-        # GraphHopper geocode uses reverse=true/false.
-        params["reverse"] = "false"
-        params["key"] = self._api_key
+        if settings.geocode_bbox:
+            params["bbox"] = settings.geocode_bbox
 
         url = f"{self._base_url}/geocode"
 
@@ -50,13 +81,37 @@ class GraphHopperGeocodeProvider(GeocodeProvider):
 
         payload = resp.json()
         hits = payload.get("hits") or []
+        return prefer_local_hits(hits)
 
+    @staticmethod
+    def _hits_to_results(hits: list[dict[str, Any]]) -> list[GeocodeResult]:
         results: list[GeocodeResult] = []
-        for hit in hits[:limit]:
-            lat, lng = self._extract_lat_lng(hit)
-            label = self._label_from_hit(hit)
+        for hit in hits:
+            lat, lng = GraphHopperGeocodeProvider._extract_lat_lng(hit)
+            label = GraphHopperGeocodeProvider._label_from_hit(hit)
             results.append(GeocodeResult(label=label, point=LatLng(lat=lat, lng=lng)))
         return results
+
+    @staticmethod
+    def _pick_best_street_hit(hits: list[dict[str, Any]], street_query: str) -> dict[str, Any] | None:
+        if not hits:
+            return None
+
+        normalized_query = street_query.casefold()
+        for hit in hits:
+            label = build_address_label(hit).casefold()
+            name = str(hit.get("name") or "").casefold()
+            street = str(hit.get("street") or "").casefold()
+            if normalized_query in label or normalized_query in name or normalized_query in street:
+                if "hẻm" not in label and "hem" not in label:
+                    return hit
+
+        for hit in hits:
+            label = build_address_label(hit).casefold()
+            if "hẻm" not in label and "hem" not in label:
+                return hit
+
+        return hits[0]
 
     async def reverse(self, point: LatLng, radius_km: float) -> GeocodeResult | None:
         if not self._api_key:
@@ -88,7 +143,7 @@ class GraphHopperGeocodeProvider(GeocodeProvider):
 
         hit = hits[0]
         lat, lng = self._extract_lat_lng(hit)
-        label = self._label_from_hit(hit)
+        label = build_timeline_label(hit)
         return GeocodeResult(label=label, point=LatLng(lat=lat, lng=lng))
 
     @staticmethod
@@ -110,20 +165,7 @@ class GraphHopperGeocodeProvider(GeocodeProvider):
 
     @staticmethod
     def _label_from_hit(hit: dict[str, Any]) -> str:
-        # Prefer explicit name, then street/city.
-        name = hit.get("name")
-        if isinstance(name, str) and name.strip():
-            return name.strip()
-
-        # GraphHopper hits often include city/street.
-        street = hit.get("street")
-        city = hit.get("city")
-        country = hit.get("country")
-        parts = []
-        for v in (street, city, country):
-            if isinstance(v, str) and v.strip():
-                parts.append(v.strip())
-        return ", ".join(parts) if parts else "Không xác định"
+        return build_address_label(hit)
 
 
 class GraphHopperRouteProvider(RouteProvider):
