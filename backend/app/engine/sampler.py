@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from app.config import settings
@@ -14,15 +15,15 @@ class SamplePoint:
     distance_m: float
 
 
-def decide_sample_count(distance_km: float) -> int:
-    """Deterministic point count based on route length."""
-    if distance_km <= 5:
-        return 5
-    if distance_km <= 15:
-        return 10
-    if distance_km <= 50:
-        return 14
-    return 20
+def decide_sample_count(distance_km: float, interval_km: float | None = None) -> int:
+    """Point count from spacing interval; always at least 2 (origin + destination)."""
+    interval = settings.route_weather_sample_interval_km if interval_km is None else interval_km
+    if interval <= 0:
+        raise ValueError("interval_km must be > 0")
+    # ceil so a 25 km route with 10 km interval yields points at ~0/10/20/25 (4),
+    # not banker's-round(2.5)+1 which collapses to 3 in Python.
+    raw = int(math.ceil(distance_km / interval)) + 1
+    return max(2, raw)
 
 
 def sample_points_by_distance(
@@ -30,6 +31,7 @@ def sample_points_by_distance(
     *,
     min_points: int | None = None,
     max_points: int | None = None,
+    interval_km: float | None = None,
 ) -> list[SamplePoint]:
     if len(geometry) < 2:
         raise ValueError("Route geometry must include at least origin and destination.")
@@ -41,10 +43,9 @@ def sample_points_by_distance(
     min_points = settings.route_weather_min_points if min_points is None else min_points
     max_points = settings.route_weather_max_points if max_points is None else max_points
 
-    count = decide_sample_count(distance_km)
+    count = decide_sample_count(distance_km, interval_km=interval_km)
     count = max(min_points, min(max_points, count))
 
-    # Always include origin + destination.
     samples: list[SamplePoint] = []
     for i in range(count):
         frac = 0.0 if count == 1 else i / (count - 1)
@@ -53,4 +54,3 @@ def sample_points_by_distance(
         samples.append(SamplePoint(index=i, point=p, distance_m=target_m))
 
     return samples
-
