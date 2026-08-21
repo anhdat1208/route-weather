@@ -78,19 +78,7 @@ async def route_weather(request: RouteWeatherRequest) -> RouteWeatherResponse:
             weather_provider=weather_provider,
             geocode_provider=geocode_provider,
         )
-
-        offsets = [0, 30, 60]
-        results = await engine.compute_departure_comparison(request, offsets_minutes=offsets)
-
-        # results: list[(offset, RouteWeatherResponse)]
-        baseline = next(resp for off, resp in results if off == 0)
-        # Build recommendation based on those alternatives
-        baseline.recommendation = _build_recommendation(
-            baseline=baseline,
-            request=request,
-            alternatives=results,
-        )
-        return baseline
+        return await engine.compute(request)
 
     except ProviderNotConfiguredError as e:
         raise HTTPException(status_code=503, detail=str(e))
