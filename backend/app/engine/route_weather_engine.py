@@ -93,7 +93,17 @@ class RouteWeatherEngine:
             return snap
 
         weather_tasks = [get_snapshot(i, eta.sample.point, eta.arrival_time) for i, eta in enumerate(eta_points)]
-        weather_snaps = await asyncio.gather(*weather_tasks)
+        weather_raw = await asyncio.gather(*weather_tasks, return_exceptions=True)
+        weather_snaps: list[Any | None] = [
+            None if isinstance(item, BaseException) else item for item in weather_raw
+        ]
+        ok_count = sum(1 for s in weather_snaps if s is not None)
+        if ok_count == len(weather_snaps):
+            weather_status = "ok"
+        elif ok_count == 0:
+            weather_status = "unavailable"
+        else:
+            weather_status = "partial"
 
         # 2) Optional reverse labels
         async def get_label(i: int, p: LatLng) -> str | None:
@@ -111,8 +121,8 @@ class RouteWeatherEngine:
             label_tasks = [get_label(i, eta.sample.point) for i, eta in enumerate(eta_points)]
             labels = await asyncio.gather(*label_tasks)
 
-        # 3) Risk per sample point
-        sample_scores = [compute_risk_score(snap) for snap in weather_snaps]
+        # 3) Risk per sample point (missing weather → neutral score)
+        sample_scores = [compute_risk_score(snap) if snap is not None else 0.0 for snap in weather_snaps]
 
         # 4) Build segments + overall risk.
         segments: list[RouteWeatherSegment] = []
@@ -181,7 +191,7 @@ class RouteWeatherEngine:
             if i == len(eta_points) - 1 and request.destination_label:
                 label = request.destination_label
 
-            prob = snap.precipitation_probability_pct
+            prob = snap.precipitation_probability_pct if snap is not None else None
             precip_label = (
                 PrecipitationRiskLabel(
                     probability_pct=prob,
@@ -215,6 +225,7 @@ class RouteWeatherEngine:
                 "distance_km": route_result.distance_m / 1000.0,
                 "duration_minutes": route_result.duration_ms / 60000.0,
             },
+            weather_status=weather_status,
             risk={
                 "score": overall_score,
                 "level": overall_level,
