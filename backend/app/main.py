@@ -28,11 +28,10 @@ try:
     )
     app.include_router(geocode_router)
     app.include_router(route_weather_router)
-except Exception as exc:  # noqa: BLE001 - surface boot failures on Vercel
+except Exception:  # noqa: BLE001 - surface boot failures on Vercel
     import traceback
 
     _boot_error = traceback.format_exc()
-    # Still allow browser calls while debugging boot failures.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -42,11 +41,30 @@ except Exception as exc:  # noqa: BLE001 - surface boot failures on Vercel
     )
 
 
+@app.get("/api/health")
+async def health() -> dict:
+    if _boot_error:
+        return {
+            "status": "error",
+            "service": "route-weather-api",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "boot_error": _boot_error[-2000:],
+            "graphhopper_configured": False,
+        }
+
+    from app.config import settings
+
+    return {
+        "status": "ok",
+        "service": "route-weather-api",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "graphhopper_configured": bool(settings.graphhopper_api_key),
+    }
+
+
 @app.get("/api/debug/weather")
 async def debug_weather(lat: float = 10.74, lng: float = 106.69) -> dict:
     """Temporary diagnostics for Open-Meteo connectivity on Vercel."""
-    from datetime import datetime
-
     from app.providers.open_meteo import OpenMeteoProvider
 
     provider = OpenMeteoProvider()
@@ -60,20 +78,3 @@ async def debug_weather(lat: float = 10.74, lng: float = 106.69) -> dict:
         }
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-
-    if _boot_error:
-        return {
-            "status": "error",
-            "service": "route-weather-api",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "boot_error": _boot_error[-2000:],
-        }
-
-    from app.config import settings
-
-    return {
-        "status": "ok",
-        "service": "route-weather-api",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "graphhopper_configured": bool(settings.graphhopper_api_key),
-    }

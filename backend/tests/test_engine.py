@@ -65,3 +65,56 @@ async def test_engine_risk_changes_with_departure_time():
     assert len(low.timeline) >= 5
     assert len(high.timeline) >= 5
 
+
+from app.providers.errors import WeatherNotAvailableError
+
+
+class FlakyWeatherProvider(WeatherProvider):
+    def __init__(self, fail_indices: set[int]):
+        self.fail_indices = fail_indices
+        self.calls = 0
+
+    async def get_forecast_at(self, *, lat: float, lng: float, time: datetime) -> WeatherSnapshot:
+        idx = self.calls
+        self.calls += 1
+        if idx in self.fail_indices:
+            raise WeatherNotAvailableError("simulated point failure")
+        return WeatherSnapshot(
+            time=time,
+            precipitation_probability_pct=20,
+            precipitation_mm=0,
+            temperature_c=30,
+            condition="Mây nhẹ",
+        )
+
+
+class AlwaysFailWeatherProvider(WeatherProvider):
+    async def get_forecast_at(self, *, lat: float, lng: float, time: datetime) -> WeatherSnapshot:
+        raise WeatherNotAvailableError("all down")
+
+
+async def test_engine_partial_weather_failure_keeps_route():
+    weather = FlakyWeatherProvider(fail_indices={1})
+    engine = RouteWeatherEngine(
+        route_provider=MockRouteProvider(),
+        weather_provider=weather,
+        geocode_provider=None,
+    )
+    result = await _compute(engine, datetime(2026, 8, 19, 15, 0, 0))
+    assert result.route["distance_km"] > 0
+    assert result.weather_status == "partial"
+    assert any(p.weather is None for p in result.timeline)
+    assert any(p.weather is not None for p in result.timeline)
+
+
+async def test_engine_full_weather_failure_still_returns_route():
+    engine = RouteWeatherEngine(
+        route_provider=MockRouteProvider(),
+        weather_provider=AlwaysFailWeatherProvider(),
+        geocode_provider=None,
+    )
+    result = await _compute(engine, datetime(2026, 8, 19, 15, 0, 0))
+    assert result.route["distance_km"] > 0
+    assert result.weather_status == "unavailable"
+    assert all(p.weather is None for p in result.timeline)
+

@@ -10,6 +10,7 @@ from app.schemas.weather import WeatherSnapshot
 
 
 RiskLevel = Literal["very_low", "low", "moderate", "high", "very_high"]
+WeatherStatus = Literal["ok", "partial", "unavailable"]
 
 
 class RouteWeatherRequest(BaseModel):
@@ -48,7 +49,7 @@ class RouteWeatherSegment(BaseModel):
     risk_score: float = Field(..., ge=0, le=100)
     risk_level: RiskLevel
 
-    weather: WeatherSnapshot
+    weather: WeatherSnapshot | None = None
 
     # Nhãn cho UI timeline
     label: str | None = None
@@ -59,7 +60,7 @@ class RouteWeatherTimelinePoint(BaseModel):
     arrival_time: datetime
     distance_km: float = Field(..., ge=0)
     label: str | None = None
-    weather: WeatherSnapshot
+    weather: WeatherSnapshot | None = None
 
     precipitation_probability_pct: float | None = None
     precipitation_label: PrecipitationRiskLabel | None = None
@@ -78,6 +79,7 @@ class RouteWeatherRecommendation(BaseModel):
 
 class RouteWeatherResponse(BaseModel):
     route: dict
+    weather_status: WeatherStatus = "ok"
     risk: RiskSummary
     segments: list[RouteWeatherSegment]
     timeline: list[RouteWeatherTimelinePoint]

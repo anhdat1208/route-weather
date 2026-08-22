@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     # Route Weather Engine
     route_weather_max_points: int = 20
     route_weather_min_points: int = 5
+    route_weather_sample_interval_km: float = 10.0
 
     # Risk thresholds
     risk_threshold_low: int = 20
