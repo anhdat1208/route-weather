@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 # RainViewer color scheme 2 = Universal Blue precipitation scale.
 # https://www.rainviewer.com/api.html
 RAINVIEWER_COLOR_SCHEME = 2
-RAINVIEWER_TILE_OPTIONS = "1_1"  # smooth + snow
+RAINVIEWER_TILE_OPTIONS = "1_0"  # no smoothing/snow extras (free tier compatible)
+RAINVIEWER_TILE_MAX_ZOOM = 7  # https://www.rainviewer.com/api/weather-maps-api.html
 
 
 @dataclass(frozen=True)

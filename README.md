@@ -144,7 +144,7 @@ Không commit credentials thật.
 
 ## Known limitations
 
-- Radar RainViewer: độ phân giải ~1 km, cập nhật ~5–10 phút; không thay thế dự báo Open-Meteo
+- Radar RainViewer: độ phân giải ~1 km, cập nhật ~5–10 phút; tile chỉ có đến **zoom 7** (map zoom sâu hơn sẽ scale tile, không request z>7)
 - RainViewer free tier: attribution bắt buộc, không dùng cho sản phẩm thương mại trả phí (xem [Terms](https://www.rainviewer.com/terms.html))
 - Open-Meteo độ phân giải theo giờ
 - GraphHopper free tier giới hạn credit / non-commercial

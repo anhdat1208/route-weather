@@ -56,6 +56,7 @@
             :radar-enabled="radarEnabled"
             :radar-opacity="radarOpacity"
             :radar-tile-url="radarTileUrl"
+            :radar-tile-max-zoom="radarTileMaxZoom"
           />
         </ClientOnly>
       </div>
@@ -102,6 +103,7 @@ const {
 const radarTileUrl = computed(() =>
   radarEnabled.value && radarFrame.value?.tile_url_template ? radarFrame.value.tile_url_template : null,
 )
+const radarTileMaxZoom = computed(() => radarFrame.value?.tile_max_zoom ?? 7)
 
 const departureDisplay = computed(() => (departureLocal.value ? departureLocal.value.slice(11, 16) : "—"))
 const etaDisplay = computed(() => {
