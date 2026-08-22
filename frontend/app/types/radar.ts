@@ -18,6 +18,7 @@ export interface RadarFrameResponse {
   timestamp: string | null
   generated_at: string | null
   tile_url_template: string | null
+  tile_max_zoom: number
   refresh_interval_seconds: number
   stale_after_seconds: number
   legend: RadarLegend | null

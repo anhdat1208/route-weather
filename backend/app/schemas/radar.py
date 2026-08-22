@@ -27,6 +27,7 @@ class RadarFrameResponse(BaseModel):
     timestamp: datetime | None = None
     generated_at: datetime | None = None
     tile_url_template: str | None = None
+    tile_max_zoom: int = 7
     refresh_interval_seconds: int = Field(description="Suggested client refresh interval")
     stale_after_seconds: int = Field(description="Data older than this is considered stale")
     legend: RadarLegend | None = None

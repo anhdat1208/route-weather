@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from app.config import settings
 from app.providers.errors import ProviderRequestError
-from app.providers.rainviewer import RainViewerProvider
+from app.providers.rainviewer import RAINVIEWER_TILE_MAX_ZOOM, RainViewerProvider
 from app.schemas.radar import RadarFrameResponse, RadarLegend, RadarLegendStop
 
 logger = logging.getLogger(__name__)
@@ -76,6 +76,7 @@ class RadarService:
                 timestamp=frame.timestamp,
                 generated_at=generated_at,
                 tile_url_template=frame.tile_url_template,
+                tile_max_zoom=RAINVIEWER_TILE_MAX_ZOOM,
                 refresh_interval_seconds=settings.radar_refresh_interval_seconds,
                 stale_after_seconds=settings.radar_stale_after_seconds,
                 legend=_RAINVIEWER_LEGEND,

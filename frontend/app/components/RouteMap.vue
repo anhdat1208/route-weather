@@ -11,6 +11,7 @@ const props = defineProps<{
   radarEnabled?: boolean
   radarOpacity?: number
   radarTileUrl?: string | null
+  radarTileMaxZoom?: number
 }>()
 
 const config = useRuntimeConfig()
@@ -87,6 +88,7 @@ function syncRadarLayer() {
   }
 
   const opacity = props.radarOpacity ?? 0.65
+  const tileMaxZoom = props.radarTileMaxZoom ?? 7
   const beforeId = m.getLayer(ROUTE_LAYER) ? ROUTE_LAYER : firstSymbolLayerId(m)
 
   const existing = m.getSource(RADAR_SOURCE) as maplibregl.RasterTileSource | undefined
@@ -98,10 +100,12 @@ function syncRadarLayer() {
 
   removeLayerSource(m, RADAR_LAYER, RADAR_SOURCE)
 
+  // RainViewer only serves tiles up to z=7; overzoom at higher map zoom levels.
   m.addSource(RADAR_SOURCE, {
     type: "raster",
     tiles: [props.radarTileUrl!],
     tileSize: 256,
+    maxzoom: tileMaxZoom,
     attribution: "© RainViewer",
   })
 
@@ -210,7 +214,7 @@ function renderAll() {
 }
 
 watch(
-  () => [props.radarEnabled, props.radarOpacity, props.radarTileUrl] as const,
+  () => [props.radarEnabled, props.radarOpacity, props.radarTileUrl, props.radarTileMaxZoom] as const,
   () => {
     if (!map.value) return
     if (map.value.isStyleLoaded()) {
