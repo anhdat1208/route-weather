@@ -36,3 +36,23 @@ class WeatherProvider(Protocol):
     async def get_forecast_at(self, *, lat: float, lng: float, time) -> WeatherSnapshot:
         ...
 
+
+class RadarFrameResult:
+    def __init__(
+        self,
+        *,
+        timestamp_unix: int,
+        path: str,
+        host: str,
+        generated_unix: int | None = None,
+    ):
+        self.timestamp_unix = timestamp_unix
+        self.path = path
+        self.host = host
+        self.generated_unix = generated_unix
+
+
+class RadarProvider(Protocol):
+    async def fetch_current_frame(self) -> RadarFrameResult:
+        ...
+

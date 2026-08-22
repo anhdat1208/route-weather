@@ -6,10 +6,12 @@
 import type maplibregl from "maplibre-gl"
 import type { RouteWeatherResponse } from "~/types/routeWeather"
 
-// Future map layers (Stage 2+): radar, satellite, rain-cell, traffic.
-// Keep adding as separate sources/layers beside route-line and weather-points.
-
-const props = defineProps<{ routeWeather: RouteWeatherResponse | null }>()
+const props = defineProps<{
+  routeWeather: RouteWeatherResponse | null
+  radarEnabled?: boolean
+  radarOpacity?: number
+  radarTileUrl?: string | null
+}>()
 
 const config = useRuntimeConfig()
 const mapEl = ref<HTMLElement | null>(null)
@@ -19,9 +21,12 @@ let startMarker: maplibregl.Marker | null = null
 let endMarker: maplibregl.Marker | null = null
 
 const ROUTE_SOURCE = "route-line"
+const ROUTE_GLOW_LAYER = "route-line-glow"
 const ROUTE_LAYER = "route-line"
 const WEATHER_SOURCE = "weather-points"
 const WEATHER_LAYER = "weather-points"
+const RADAR_SOURCE = "radar-tiles"
+const RADAR_LAYER = "radar-tiles"
 
 async function ensureMap() {
   if (!process.client || map.value || !mapEl.value) return
@@ -47,6 +52,13 @@ function removeLayerSource(m: maplibregl.Map, layerId: string, sourceId: string)
   if (m.getSource(sourceId)) m.removeSource(sourceId)
 }
 
+function firstSymbolLayerId(m: maplibregl.Map): string | undefined {
+  const layers = m.getStyle()?.layers
+  if (!layers) return undefined
+  const symbol = layers.find((l) => l.type === "symbol")
+  return symbol?.id
+}
+
 function weatherPointCoords(data: RouteWeatherResponse): [number, number][] {
   const coords: [number, number][] = []
   const segs = data.segments
@@ -63,11 +75,56 @@ function weatherPointCoords(data: RouteWeatherResponse): [number, number][] {
   return coords
 }
 
-function renderLayers() {
+function syncRadarLayer() {
+  if (!map.value || !maplibreModule) return
+  const m = map.value
+  const showRadar = props.radarEnabled && props.radarTileUrl
+
+  if (!showRadar) {
+    removeLayerSource(m, RADAR_LAYER, RADAR_SOURCE)
+    if (m.getLayer(ROUTE_GLOW_LAYER)) m.removeLayer(ROUTE_GLOW_LAYER)
+    return
+  }
+
+  const opacity = props.radarOpacity ?? 0.65
+  const beforeId = m.getLayer(ROUTE_LAYER) ? ROUTE_LAYER : firstSymbolLayerId(m)
+
+  const existing = m.getSource(RADAR_SOURCE) as maplibregl.RasterTileSource | undefined
+  if (existing && "setTiles" in existing) {
+    existing.setTiles([props.radarTileUrl!])
+    m.setPaintProperty(RADAR_LAYER, "raster-opacity", opacity)
+    return
+  }
+
+  removeLayerSource(m, RADAR_LAYER, RADAR_SOURCE)
+
+  m.addSource(RADAR_SOURCE, {
+    type: "raster",
+    tiles: [props.radarTileUrl!],
+    tileSize: 256,
+    attribution: "© RainViewer",
+  })
+
+  m.addLayer(
+    {
+      id: RADAR_LAYER,
+      type: "raster",
+      source: RADAR_SOURCE,
+      paint: {
+        "raster-opacity": opacity,
+        "raster-fade-duration": 300,
+      },
+    },
+    beforeId,
+  )
+}
+
+function renderRouteLayers() {
   if (!map.value || !maplibreModule || !props.routeWeather) return
   const m = map.value
   const data = props.routeWeather
 
+  if (m.getLayer(ROUTE_GLOW_LAYER)) m.removeLayer(ROUTE_GLOW_LAYER)
   removeLayerSource(m, ROUTE_LAYER, ROUTE_SOURCE)
   removeLayerSource(m, WEATHER_LAYER, WEATHER_SOURCE)
 
@@ -82,6 +139,22 @@ function renderLayers() {
       properties: {},
     },
   })
+
+  // Glow under route when radar is visible for contrast.
+  if (props.radarEnabled && props.radarTileUrl) {
+    m.addLayer({
+      id: ROUTE_GLOW_LAYER,
+      source: ROUTE_SOURCE,
+      type: "line",
+      paint: {
+        "line-color": "#ffffff",
+        "line-width": 9,
+        "line-opacity": 0.55,
+        "line-blur": 1,
+      },
+    })
+  }
+
   m.addLayer({
     id: ROUTE_LAYER,
     source: ROUTE_SOURCE,
@@ -89,7 +162,7 @@ function renderLayers() {
     paint: {
       "line-color": "#38bdf8",
       "line-width": 5,
-      "line-opacity": 0.9,
+      "line-opacity": 0.95,
     },
   })
 
@@ -112,7 +185,7 @@ function renderLayers() {
     paint: {
       "circle-radius": 6,
       "circle-color": "#fbbf24",
-      "circle-stroke-width": 1,
+      "circle-stroke-width": 2,
       "circle-stroke-color": "#0f172a",
     },
   })
@@ -131,23 +204,39 @@ function renderLayers() {
   m.fitBounds(bounds, { padding: 40 })
 }
 
+function renderAll() {
+  syncRadarLayer()
+  if (props.routeWeather) renderRouteLayers()
+}
+
+watch(
+  () => [props.radarEnabled, props.radarOpacity, props.radarTileUrl] as const,
+  () => {
+    if (!map.value) return
+    if (map.value.isStyleLoaded()) {
+      syncRadarLayer()
+      if (props.routeWeather) renderRouteLayers()
+    } else {
+      map.value.once("load", renderAll)
+    }
+  },
+)
+
 watch(
   () => props.routeWeather,
   async () => {
     await ensureMap()
     if (!props.routeWeather || !map.value) return
-    if (map.value.isStyleLoaded()) renderLayers()
-    else map.value.once("load", renderLayers)
+    if (map.value.isStyleLoaded()) renderAll()
+    else map.value.once("load", renderAll)
   },
   { deep: true },
 )
 
 onMounted(async () => {
   await ensureMap()
-  if (props.routeWeather) {
-    if (map.value?.isStyleLoaded()) renderLayers()
-    else map.value?.once("load", renderLayers)
-  }
+  if (map.value?.isStyleLoaded()) renderAll()
+  else map.value?.once("load", renderAll)
 })
 
 onBeforeUnmount(() => {

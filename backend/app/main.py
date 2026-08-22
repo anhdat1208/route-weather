@@ -16,6 +16,7 @@ _boot_error: str | None = None
 try:
     from app.config import settings
     from app.api.geocode import router as geocode_router
+    from app.api.radar import router as radar_router
     from app.api.route_weather import router as route_weather_router
 
     app.add_middleware(
@@ -27,6 +28,7 @@ try:
         allow_headers=["*"],
     )
     app.include_router(geocode_router)
+    app.include_router(radar_router)
     app.include_router(route_weather_router)
 except Exception:  # noqa: BLE001 - surface boot failures on Vercel
     import traceback

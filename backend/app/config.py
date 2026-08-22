@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     # Open-Meteo
     open_meteo_base_url: str = "https://api.open-meteo.com/v1"
 
+    # RainViewer radar (no key required)
+    rainviewer_api_url: str = "https://api.rainviewer.com"
+    radar_refresh_interval_seconds: int = 300
+    radar_stale_after_seconds: int = 900
+
     # Database (unused in MVP)
     database_url: str = ""
 
@@ -40,6 +45,7 @@ class Settings(BaseSettings):
     cache_ttl_route: int = 86400
     cache_ttl_geocode: int = 604800
     cache_ttl_weather: int = 1800
+    cache_ttl_radar: int = 120
 
     # Route Weather Engine
     route_weather_max_points: int = 20
