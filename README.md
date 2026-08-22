@@ -8,7 +8,20 @@
 
 **Có:** nhập origin/destination (+ phương tiện, giờ xuất phát), tính route trên map, sampling điểm theo interval cấu hình được, ETA từng điểm, weather normalized qua adapter, timeline thời tiết, loading/error, weather fail không làm mất route.
 
-**Không có (giai đoạn sau):** radar, satellite, rain-cell tracking, AI nowcasting, traffic prediction, risk scoring trên UI.
+**Không có (giai đoạn sau):** satellite, rain-cell tracking, AI nowcasting, traffic prediction, risk scoring trên UI.
+
+## Stage 2 — Live Radar
+
+Stage 2 bổ sung radar mưa gần thời gian thực lên bản đồ lộ trình.
+
+**Có thêm:**
+- Radar mưa gần thời gian thực (RainViewer)
+- Lớp radar trên map, bật/tắt và điều chỉnh độ mờ
+- Legend cường độ mưa, timestamp/độ tươi dữ liệu
+- Tự làm mới theo chu kỳ cấu hình được
+- Route vẫn hiển thị rõ trên radar (lớp glow)
+
+**Chưa có:** rain-cell tracking, dự báo chuyển động mưa, AI nowcasting, route risk UI, traffic prediction.
 
 ## Tech Stack
 
@@ -22,20 +35,15 @@
 ```text
 User → RouteForm
          ↓
-  useRouteWeather
+  useRouteWeather ──→ POST /api/route-weather → RouteWeatherEngine
+  useRadar       ──→ GET /api/radar/current  → RadarService → RainViewer
          ↓
-  POST /api/route-weather
-         ↓
-  RouteWeatherEngine
-   ├── GraphHopper (route + geocode)
-   ├── Sampler (interval km + min/max)
-   ├── ETA
-   └── Open-Meteo → WeatherSnapshot
-         ↓
-  RouteMap + JourneySummary + WeatherTimeline
+  RouteMap (Base → Radar → Route → Weather points)
+         +
+  RadarControls + JourneySummary + WeatherTimeline
 ```
 
-Map layers (Stage 1): Base → Route → Weather points. Stubs sẵn cho radar / satellite / rain-cell / traffic.
+Map layers: Base → Radar (Stage 2) → Route → Weather points. Stubs sẵn cho satellite / rain-cell / traffic.
 
 ## Yêu cầu
 
@@ -102,6 +110,10 @@ npm run build
 | `GRAPHHOPPER_API_KEY` | API key GraphHopper |
 | `GRAPHHOPPER_BASE_URL` | GraphHopper API base |
 | `OPEN_METEO_BASE_URL` | Open-Meteo API base |
+| `RAINVIEWER_API_URL` | RainViewer API base (radar tiles) |
+| `RADAR_REFRESH_INTERVAL_SECONDS` | Chu kỳ làm mới radar phía client, mặc định `300` |
+| `RADAR_STALE_AFTER_SECONDS` | Coi radar cũ sau N giây, mặc định `900` |
+| `CACHE_TTL_RADAR` | Cache metadata radar (giây), mặc định `120` |
 | `ROUTE_WEATHER_SAMPLE_INTERVAL_KM` | Khoảng cách mẫu mục tiêu (km), mặc định `10` |
 | `ROUTE_WEATHER_MIN_POINTS` | Số điểm tối thiểu, mặc định `5` |
 | `ROUTE_WEATHER_MAX_POINTS` | Số điểm tối đa (chống nổ request), mặc định `20` |
@@ -127,10 +139,13 @@ Không commit credentials thật.
 | GET | `/api/health` | Health check |
 | GET | `/api/geocode` | Autocomplete địa chỉ |
 | POST | `/api/route-weather` | Route + weather (single compute) |
+| GET | `/api/radar/current` | Metadata radar hiện tại (tile URL, timestamp) |
 | POST | `/api/route-weather/compare` | So sánh giờ xuất phát (backend; UI Stage 1 không dùng) |
 
 ## Known limitations
 
+- Radar RainViewer: độ phân giải ~1 km, cập nhật ~5–10 phút; không thay thế dự báo Open-Meteo
+- RainViewer free tier: attribution bắt buộc, không dùng cho sản phẩm thương mại trả phí (xem [Terms](https://www.rainviewer.com/terms.html))
 - Open-Meteo độ phân giải theo giờ
 - GraphHopper free tier giới hạn credit / non-commercial
 - ETA chưa tính traffic
@@ -140,7 +155,7 @@ Không commit credentials thật.
 ## Roadmap
 
 - [x] Stage 1 — Route Weather MVP
-- [ ] Stage 2 — Live Radar
+- [x] Stage 2 — Live Radar
 - [ ] Stage 3 — Rain-cell Tracking
 - [ ] Stage 4 — Satellite + Data Fusion
 - [ ] Stage 5 — AI Nowcasting

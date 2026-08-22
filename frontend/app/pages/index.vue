@@ -30,6 +30,19 @@
         :eta-display="etaDisplay"
       />
 
+      <RadarControls
+        :enabled="radarEnabled"
+        :opacity="radarOpacity"
+        :loading="radarLoading"
+        :error-message="radarError"
+        :frame="radarFrame"
+        :freshness-label="radarFreshness"
+        :timestamp-display="radarTimestamp"
+        @update:enabled="setRadarEnabled"
+        @update:opacity="setRadarOpacity"
+        @refresh="fetchRadar"
+      />
+
       <p class="text-xs" :class="healthOk ? 'text-green-400' : 'text-red-400'">
         API {{ healthOk ? "online" : "offline" }}
       </p>
@@ -38,7 +51,12 @@
     <main class="flex flex-1 flex-col overflow-hidden">
       <div class="relative min-h-[50vh] flex-1">
         <ClientOnly>
-          <RouteMap :route-weather="routeWeather" />
+          <RouteMap
+            :route-weather="routeWeather"
+            :radar-enabled="radarEnabled"
+            :radar-opacity="radarOpacity"
+            :radar-tile-url="radarTileUrl"
+          />
         </ClientOnly>
       </div>
       <WeatherTimeline :points="routeWeather?.timeline ?? []" />
@@ -67,6 +85,23 @@ const {
   selectDestination,
   analyze,
 } = useRouteWeather()
+
+const {
+  enabled: radarEnabled,
+  opacity: radarOpacity,
+  loading: radarLoading,
+  errorMessage: radarError,
+  frame: radarFrame,
+  freshnessLabel: radarFreshness,
+  timestampDisplay: radarTimestamp,
+  fetchRadar,
+  setEnabled: setRadarEnabled,
+  setOpacity: setRadarOpacity,
+} = useRadar()
+
+const radarTileUrl = computed(() =>
+  radarEnabled.value && radarFrame.value?.tile_url_template ? radarFrame.value.tile_url_template : null,
+)
 
 const departureDisplay = computed(() => (departureLocal.value ? departureLocal.value.slice(11, 16) : "—"))
 const etaDisplay = computed(() => {
