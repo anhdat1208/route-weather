@@ -142,6 +142,16 @@ npm run build
 | `RADAR_REFRESH_INTERVAL_SECONDS` | Chu kỳ làm mới radar phía client, mặc định `300` |
 | `RADAR_STALE_AFTER_SECONDS` | Coi radar cũ sau N giây, mặc định `900` |
 | `CACHE_TTL_RADAR` | Cache metadata radar (giây), mặc định `120` |
+| `SATELLITE_REFRESH_INTERVAL_SECONDS` | Chu kỳ làm mới satellite phía client, mặc định `600` |
+| `SATELLITE_STALE_AFTER_SECONDS` | Coi satellite cũ sau N giây, mặc định `1800` |
+| `CACHE_TTL_SATELLITE` | Cache metadata satellite (giây), mặc định `300` |
+| `FORECAST_STALE_AFTER_SECONDS` | Ngưỡng stale forecast trong fusion, mặc định `3600` |
+| `FUSION_ALIGNMENT_MAX_SECONDS` | Ngưỡng lệch thời gian radar-satellite để đánh dấu conflict, mặc định `1200` |
+| `FUSION_CORRIDOR_KM` | Bán kính hành lang gán rain-cell vào segment, mặc định `25` |
+| `GIBS_WMTS_CAPABILITIES_URL` | WMTS capabilities URL cho NASA GIBS |
+| `GIBS_SATELLITE_LAYER` | Layer vệ tinh GIBS (mặc định Himawari IR Band13) |
+| `GIBS_TILE_MATRIX_SET` | Tile matrix set GIBS (mặc định `GoogleMapsCompatible_Level6`) |
+| `GIBS_TILE_MAX_ZOOM` | Max zoom layer satellite, mặc định `6` |
 | `RAIN_CELL_MIN_INTENSITY` | Ngưỡng intensity pixel (implementation), mặc định `25` |
 | `RAIN_CELL_MIN_AREA_PIXELS` | Diện tích tối thiểu (pixel), mặc định `4` |
 | `RAIN_CELL_MAX_AREA_PIXELS` | Diện tích tối đa (pixel), mặc định `500000` |
@@ -177,7 +187,9 @@ Không commit credentials thật.
 | GET | `/api/geocode` | Autocomplete địa chỉ |
 | POST | `/api/route-weather` | Route + weather (single compute) |
 | GET | `/api/radar/current` | Metadata radar hiện tại (tile URL, timestamp) |
+| GET | `/api/satellite/latest` | Metadata ảnh vệ tinh hiện tại (tile URL, timestamp) |
 | POST | `/api/rain-cells/track` | Detect + track vùng mưa trong hành lang lộ trình |
+| POST | `/api/weather-fusion/state` | Unified multi-source weather state theo route segment |
 | POST | `/api/route-weather/compare` | So sánh giờ xuất phát (backend; UI Stage 1 không dùng) |
 
 ## Known limitations
@@ -191,13 +203,15 @@ Không commit credentials thật.
 - ETA chưa tính traffic
 - Geocoding đường nhỏ ở VN có thể lệch
 - Dự báo mang tính xác suất
+- Satellite Stage 4 fuse theo metadata thời gian/chất lượng/provenance; chưa decode pixel ảnh vệ tinh (feature hiện tại lấy từ forecast + rain-cell + timestamp)
+- Conflict radar-satellite dùng deterministic threshold, không tự quyết định nguồn nào “đúng” hơn
 
 ## Roadmap
 
 - [x] Stage 1 — Route Weather MVP
 - [x] Stage 2 — Live Radar
 - [x] Stage 3 — Rain-cell Detection & Tracking
-- [ ] Stage 4 — Satellite + Data Fusion
+- [x] Stage 4 — Satellite + Data Fusion
 - [ ] Stage 5 — AI Nowcasting
 - [ ] Stage 6 — Traffic Prediction
 - [ ] Stage 7 — Route Weather Intelligence
@@ -207,3 +221,26 @@ Không commit credentials thật.
 - [Design Spec Stage 1](docs/superpowers/specs/2026-08-21-route-weather-stage1-design.md)
 - [Design Spec Stage 3](docs/superpowers/specs/2026-08-24-stage3-rain-cell-tracking-design.md)
 - [Implementation Plan](docs/superpowers/plans/2026-08-21-route-weather-stage1.md)
+
+## Stage 4 — Satellite + Multi-source Data Fusion
+
+Stage 4 tích hợp dữ liệu vệ tinh và thêm lớp fusion deterministic để tạo trạng thái thời tiết hợp nhất theo route segment, có temporal alignment, freshness và provenance.
+
+Implemented:
+- satellite integration (NASA GIBS Himawari WMTS) qua adapter/service riêng
+- satellite map layer độc lập, bật/tắt riêng, chỉnh opacity
+- timestamp/freshness tracking cho radar, satellite, forecast, rain cells
+- source provenance preservation trong unified weather state
+- normalized weather state + deterministic fusion engine
+- data quality metadata (`GOOD`, `STALE`, `MISSING`, `CONFLICTING`, `UNKNOWN`)
+- route-oriented fused weather state (`/api/weather-fusion/state`)
+- corridor overlap: rain-cell gán vào segment gần nhất nếu nằm trong `FUSION_CORRIDOR_KM` (không dùng midpoint 50 km)
+- per-segment confidence (0–1) từ freshness/quality/conflict
+- deterministic nowcast features trên từng segment (`precip_evidence`, age, overlap, …) cho Stage 5
+- fusion debug panel (dev / `NUXT_PUBLIC_ENABLE_FUSION_DEBUG=true`)
+
+Not implemented:
+- AI/ML
+- future prediction
+- traffic prediction
+- final route risk engine
