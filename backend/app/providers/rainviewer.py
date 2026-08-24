@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -44,8 +45,14 @@ class RainViewerProvider:
     def __init__(self, *, base_url: str | None = None, timeout: float = 15.0) -> None:
         self._base_url = (base_url or settings.rainviewer_api_url).rstrip("/")
         self._timeout = timeout
+        self._maps_cache: dict[str, Any] | None = None
+        self._maps_cache_expires_at: float = 0.0
 
-    async def fetch_current_frame(self) -> RadarFrame:
+    async def fetch_weather_maps(self) -> dict[str, Any]:
+        now = time.monotonic()
+        if self._maps_cache is not None and now < self._maps_cache_expires_at:
+            return self._maps_cache
+
         url = f"{self._base_url}/public/weather-maps.json"
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
@@ -56,22 +63,40 @@ class RainViewerProvider:
             logger.warning("RainViewer request failed: %s", exc)
             raise ProviderRequestError(f"RainViewer radar unavailable: {exc}") from exc
 
+        self._maps_cache = payload
+        self._maps_cache_expires_at = now + settings.cache_ttl_radar
+        return payload
+
+    def _frames_from_payload(self, payload: dict[str, Any]) -> list[RadarFrame]:
         host = str(payload.get("host", "https://tilecache.rainviewer.com")).rstrip("/")
         generated = payload.get("generated")
         generated_unix = int(generated) if generated is not None else None
-
         radar = payload.get("radar") or {}
         past: list[dict[str, Any]] = radar.get("past") or []
-        if not past:
+        frames: list[RadarFrame] = []
+        for entry in past:
+            frames.append(
+                RadarFrame(
+                    timestamp_unix=int(entry["time"]),
+                    path=str(entry["path"]),
+                    host=host,
+                    generated_unix=generated_unix,
+                )
+            )
+        return frames
+
+    async def fetch_current_frame(self) -> RadarFrame:
+        payload = await self.fetch_weather_maps()
+        frames = self._frames_from_payload(payload)
+        if not frames:
             raise ProviderRequestError("RainViewer returned no radar frames")
+        return frames[-1]
 
-        latest = past[-1]
-        timestamp_unix = int(latest["time"])
-        path = str(latest["path"])
-
-        return RadarFrame(
-            timestamp_unix=timestamp_unix,
-            path=path,
-            host=host,
-            generated_unix=generated_unix,
-        )
+    async def fetch_past_frames(self, count: int) -> list[RadarFrame]:
+        payload = await self.fetch_weather_maps()
+        frames = self._frames_from_payload(payload)
+        if not frames:
+            raise ProviderRequestError("RainViewer returned no radar frames")
+        if count <= 0:
+            return []
+        return frames[-count:]

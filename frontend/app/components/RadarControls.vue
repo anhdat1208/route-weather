@@ -16,6 +16,27 @@
       <input
         type="checkbox"
         class="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500"
+        :checked="rainCellsEnabled"
+        :disabled="!routeReady"
+        @change="onRainCellsToggle"
+      />
+      <span :class="routeReady ? '' : 'text-slate-500'">Vùng mưa (rain cells)</span>
+    </label>
+    <p v-if="!routeReady" class="text-[10px] text-slate-500">Cần có lộ trình để phân tích vùng mưa.</p>
+
+    <div v-if="rainCellsEnabled && routeReady" class="space-y-1 text-xs">
+      <div v-if="rainCellsLoading" class="text-slate-400">Đang phân tích vùng mưa…</div>
+      <div v-else-if="rainCellsError" class="text-amber-400">{{ rainCellsError }}</div>
+      <div v-else-if="rainCellCount !== null" class="text-slate-300">
+        {{ rainCellCount }} vùng mưa đang theo dõi
+        <span v-if="rainCellsFramesUsed"> · {{ rainCellsFramesUsed }} khung radar</span>
+      </div>
+    </div>
+
+    <label class="flex cursor-pointer items-center gap-2">
+      <input
+        type="checkbox"
+        class="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500"
         :checked="enabled"
         @change="onToggle"
       />
@@ -60,7 +81,7 @@
           </div>
           <div class="flex justify-between text-[10px] text-slate-500">
             <span>{{ legend.stops[0]?.label ?? "Nhẹ" }}</span>
-            <span>{{ legend.stops[legend.stops.length - 1]?.label ?? "Mạnh" }}</span>
+            <span>{{ legend.stops?.[legend.stops.length - 1]?.label ?? "Mạnh" }}</span>
           </div>
         </div>
       </template>
@@ -79,11 +100,18 @@ const props = defineProps<{
   frame: RadarFrameResponse | null
   freshnessLabel: string | null
   timestampDisplay: string | null
+  rainCellsEnabled: boolean
+  rainCellsLoading: boolean
+  rainCellsError: string | null
+  rainCellCount: number | null
+  rainCellsFramesUsed: number | null
+  routeReady: boolean
 }>()
 
 const emit = defineEmits<{
   "update:enabled": [value: boolean]
   "update:opacity": [value: number]
+  "update:rainCellsEnabled": [value: boolean]
   refresh: []
 }>()
 
@@ -101,5 +129,9 @@ function onToggle(event: Event) {
 
 function onOpacity(event: Event) {
   emit("update:opacity", Number((event.target as HTMLInputElement).value))
+}
+
+function onRainCellsToggle(event: Event) {
+  emit("update:rainCellsEnabled", (event.target as HTMLInputElement).checked)
 }
 </script>

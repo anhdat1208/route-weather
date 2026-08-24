@@ -47,6 +47,17 @@ class Settings(BaseSettings):
     cache_ttl_weather: int = 1800
     cache_ttl_radar: int = 120
 
+    # Rain-cell detection & tracking (implementation thresholds — not meteorological classes)
+    rain_cell_min_intensity: float = 25.0
+    rain_cell_min_area_pixels: int = 4
+    rain_cell_max_area_pixels: int = 500_000
+    rain_cell_max_match_distance_km: float = 80.0
+    rain_cell_history_frames: int = 6
+    rain_cell_max_missed_frames: int = 2
+    rain_cell_frame_count: int = 4
+    rain_cell_buffer_km: float = 50.0
+    rain_cell_tile_zoom: int = 5
+
     # Route Weather Engine
     route_weather_max_points: int = 20
     route_weather_min_points: int = 5

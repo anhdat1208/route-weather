@@ -5,6 +5,8 @@
 <script setup lang="ts">
 import type maplibregl from "maplibre-gl"
 import type { RouteWeatherResponse } from "~/types/routeWeather"
+import type { TrackedRainCell } from "~/types/rainCell"
+import { bearingToCompass } from "~/utils/rainCell"
 
 const props = defineProps<{
   routeWeather: RouteWeatherResponse | null
@@ -12,6 +14,8 @@ const props = defineProps<{
   radarOpacity?: number
   radarTileUrl?: string | null
   radarTileMaxZoom?: number
+  rainCellsEnabled?: boolean
+  trackedCells?: TrackedRainCell[]
 }>()
 
 const config = useRuntimeConfig()
@@ -28,6 +32,14 @@ const WEATHER_SOURCE = "weather-points"
 const WEATHER_LAYER = "weather-points"
 const RADAR_SOURCE = "radar-tiles"
 const RADAR_LAYER = "radar-tiles"
+const RAIN_CELLS_POINTS_SOURCE = "rain-cells-points"
+const RAIN_CELLS_BBOX_SOURCE = "rain-cells-bbox"
+const RAIN_CELLS_MOTION_SOURCE = "rain-cells-motion"
+const RAIN_CELLS_BBOX_LAYER = "rain-cells-bbox"
+const RAIN_CELLS_POINT_LAYER = "rain-cells-points"
+const RAIN_CELLS_MOTION_LAYER = "rain-cells-motion"
+
+let rainCellPopup: maplibregl.Popup | null = null
 
 async function ensureMap() {
   if (!process.client || map.value || !mapEl.value) return
@@ -123,6 +135,176 @@ function syncRadarLayer() {
   )
 }
 
+function rainCellGeoJson(cells: TrackedRainCell[]) {
+  const bboxFeatures = cells
+    .filter((c) => c.current.bounds)
+    .map((c) => {
+      const b = c.current.bounds!
+      return {
+        type: "Feature" as const,
+        geometry: {
+          type: "Polygon" as const,
+          coordinates: [
+            [
+              [b.west, b.north],
+              [b.east, b.north],
+              [b.east, b.south],
+              [b.west, b.south],
+              [b.west, b.north],
+            ],
+          ],
+        },
+        properties: {
+          id: c.id,
+          state: c.state,
+        },
+      }
+    })
+
+  const pointFeatures = cells.map((c) => ({
+    type: "Feature" as const,
+    geometry: {
+      type: "Point" as const,
+      coordinates: [c.current.centroid.lng, c.current.centroid.lat],
+    },
+    properties: {
+      id: c.id,
+      state: c.state,
+      area_km2: c.current.area_km2 ?? null,
+      intensity_mean: c.current.intensity?.mean ?? null,
+      speed_kmh: c.motion?.speed_kmh ?? null,
+      bearing: c.motion?.bearing_degrees ?? null,
+      updated: c.current.timestamp,
+      distance_km: c.distance_to_route_km ?? null,
+    },
+  }))
+
+  const motionFeatures = cells
+    .filter((c) => c.motion?.from_point && c.motion?.to_point)
+    .map((c) => ({
+      type: "Feature" as const,
+      geometry: {
+        type: "LineString" as const,
+        coordinates: [
+          [c.motion!.from_point!.lng, c.motion!.from_point!.lat],
+          [c.motion!.to_point!.lng, c.motion!.to_point!.lat],
+        ],
+      },
+      properties: { id: c.id },
+    }))
+
+  return {
+    bbox: { type: "FeatureCollection" as const, features: bboxFeatures },
+    points: { type: "FeatureCollection" as const, features: pointFeatures },
+    motion: { type: "FeatureCollection" as const, features: motionFeatures },
+  }
+}
+
+function formatRainCellPopup(props: Record<string, unknown>): string {
+  const lines: string[] = ["<strong>Vùng mưa</strong>"]
+  if (props.intensity_mean != null) {
+    lines.push(`Chỉ số cường độ: ${Number(props.intensity_mean).toFixed(0)}`)
+  }
+  if (props.area_km2 != null) {
+    lines.push(`Diện tích: ~${Number(props.area_km2).toFixed(1)} km²`)
+  }
+  if (props.speed_kmh != null && props.bearing != null) {
+    lines.push(`Di chuyển: ${bearingToCompass(Number(props.bearing))} · ${Number(props.speed_kmh).toFixed(0)} km/h`)
+  }
+  if (props.distance_km != null) {
+    lines.push(`Khoảng cách tới lộ trình: ${Number(props.distance_km).toFixed(1)} km`)
+  }
+  if (props.updated) {
+    const t = new Date(String(props.updated))
+    lines.push(
+      `Cập nhật: ${t.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" })}`,
+    )
+  }
+  lines.push(`<span class="text-slate-400 text-xs">Quan sát hiện tại — không phải dự báo</span>`)
+  return `<div class="text-sm space-y-1">${lines.map((l) => `<div>${l}</div>`).join("")}</div>`
+}
+
+function syncRainCellLayers() {
+  if (!map.value || !maplibreModule) return
+  const m = map.value
+  const show = props.rainCellsEnabled && (props.trackedCells?.length ?? 0) > 0
+
+  if (!show) {
+    removeLayerSource(m, RAIN_CELLS_MOTION_LAYER, RAIN_CELLS_MOTION_SOURCE)
+    removeLayerSource(m, RAIN_CELLS_POINT_LAYER, RAIN_CELLS_POINTS_SOURCE)
+    removeLayerSource(m, RAIN_CELLS_BBOX_LAYER, RAIN_CELLS_BBOX_SOURCE)
+    rainCellPopup?.remove()
+    return
+  }
+
+  const gj = rainCellGeoJson(props.trackedCells!)
+  const beforeRoute = m.getLayer(ROUTE_LAYER) ? ROUTE_LAYER : firstSymbolLayerId(m)
+
+  const upsert = (sourceId: string, layerId: string, data: GeoJSON.FeatureCollection, layerSpec: maplibregl.LayerSpecification) => {
+    if (m.getSource(sourceId)) {
+      ;(m.getSource(sourceId) as maplibregl.GeoJSONSource).setData(data)
+    } else {
+      m.addSource(sourceId, { type: "geojson", data })
+      m.addLayer(layerSpec, beforeRoute ?? undefined)
+    }
+  }
+
+  upsert(RAIN_CELLS_BBOX_SOURCE, RAIN_CELLS_BBOX_LAYER, gj.bbox, {
+    id: RAIN_CELLS_BBOX_LAYER,
+    type: "line",
+    source: RAIN_CELLS_BBOX_SOURCE,
+    paint: {
+      "line-color": "#f97316",
+      "line-width": 2,
+      "line-opacity": 0.55,
+      "line-dasharray": [2, 2],
+    },
+  })
+
+  upsert(RAIN_CELLS_MOTION_SOURCE, RAIN_CELLS_MOTION_LAYER, gj.motion, {
+    id: RAIN_CELLS_MOTION_LAYER,
+    type: "line",
+    source: RAIN_CELLS_MOTION_SOURCE,
+    paint: {
+      "line-color": "#fb923c",
+      "line-width": 3,
+      "line-opacity": 0.9,
+    },
+  })
+
+  if (m.getSource(RAIN_CELLS_POINTS_SOURCE)) {
+    ;(m.getSource(RAIN_CELLS_POINTS_SOURCE) as maplibregl.GeoJSONSource).setData(gj.points)
+  } else {
+    m.addSource(RAIN_CELLS_POINTS_SOURCE, { type: "geojson", data: gj.points })
+    m.addLayer(
+      {
+        id: RAIN_CELLS_POINT_LAYER,
+        type: "circle",
+        source: RAIN_CELLS_POINTS_SOURCE,
+        paint: {
+          "circle-radius": 7,
+          "circle-color": ["match", ["get", "state"], "LOST", "#94a3b8", "NEW", "#fbbf24", "#ef4444"],
+          "circle-stroke-width": 2,
+          "circle-stroke-color": "#0f172a",
+        },
+      },
+      beforeRoute ?? undefined,
+    )
+    m.on("click", RAIN_CELLS_POINT_LAYER, (e) => {
+      const f = e.features?.[0]
+      if (!f?.properties || !e.lngLat) return
+      if (!rainCellPopup) rainCellPopup = new maplibreModule!.Popup({ closeButton: true, maxWidth: "280px" })
+      rainCellPopup.setLngLat(e.lngLat).setHTML(formatRainCellPopup(f.properties as Record<string, unknown>)).addTo(m)
+    })
+    m.on("mouseenter", RAIN_CELLS_POINT_LAYER, () => {
+      m.getCanvas().style.cursor = "pointer"
+    })
+    m.on("mouseleave", RAIN_CELLS_POINT_LAYER, () => {
+      m.getCanvas().style.cursor = ""
+    })
+  }
+}
+
 function renderRouteLayers() {
   if (!map.value || !maplibreModule || !props.routeWeather) return
   const m = map.value
@@ -210,6 +392,7 @@ function renderRouteLayers() {
 
 function renderAll() {
   syncRadarLayer()
+  syncRainCellLayers()
   if (props.routeWeather) renderRouteLayers()
 }
 
@@ -224,6 +407,16 @@ watch(
       map.value.once("load", renderAll)
     }
   },
+)
+
+watch(
+  () => [props.rainCellsEnabled, props.trackedCells] as const,
+  () => {
+    if (!map.value) return
+    if (map.value.isStyleLoaded()) syncRainCellLayers()
+    else map.value.once("load", renderAll)
+  },
+  { deep: true },
 )
 
 watch(

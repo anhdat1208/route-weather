@@ -38,9 +38,16 @@
         :frame="radarFrame"
         :freshness-label="radarFreshness"
         :timestamp-display="radarTimestamp"
+        :rain-cells-enabled="rainCellsEnabled"
+        :rain-cells-loading="rainCellsLoading"
+        :rain-cells-error="rainCellsError"
+        :rain-cell-count="rainCellCountDisplay"
+        :rain-cells-frames-used="rainCellsFramesUsed"
+        :route-ready="routeReady"
         @update:enabled="setRadarEnabled"
         @update:opacity="setRadarOpacity"
-        @refresh="fetchRadar"
+        @update:rain-cells-enabled="setRainCellsEnabled"
+        @refresh="onRefreshLayers"
       />
 
       <p class="text-xs" :class="healthOk ? 'text-green-400' : 'text-red-400'">
@@ -57,6 +64,8 @@
             :radar-opacity="radarOpacity"
             :radar-tile-url="radarTileUrl"
             :radar-tile-max-zoom="radarTileMaxZoom"
+            :rain-cells-enabled="rainCellsEnabled"
+            :tracked-cells="trackedCells"
           />
         </ClientOnly>
       </div>
@@ -66,6 +75,8 @@
 </template>
 
 <script setup lang="ts">
+import { useRainCells } from "~/composables/useRainCells"
+
 const {
   healthOk,
   loading,
@@ -99,6 +110,39 @@ const {
   setEnabled: setRadarEnabled,
   setOpacity: setRadarOpacity,
 } = useRadar()
+
+const {
+  enabled: rainCellsEnabled,
+  loading: rainCellsLoading,
+  errorMessage: rainCellsError,
+  cells: trackedCells,
+  cellCount,
+  response: rainCellsResponse,
+  fetchRainCells,
+  setEnabled: setRainCellsEnabled,
+} = useRainCells()
+
+const routeGeometry = computed(() => {
+  if (!routeWeather.value?.segments) return null
+  return routeWeather.value.segments.flatMap((s) => s.coordinates ?? [])
+})
+
+const routeReady = computed(() => (routeGeometry.value?.length ?? 0) >= 2)
+const rainCellCountDisplay = computed(() => (rainCellsEnabled.value && routeReady.value ? cellCount.value : null))
+const rainCellsFramesUsed = computed(() => rainCellsResponse.value?.frames_used ?? null)
+
+function onRefreshLayers() {
+  void fetchRadar()
+  if (rainCellsEnabled.value && routeGeometry.value) {
+    void fetchRainCells(routeGeometry.value)
+  }
+}
+
+watch([routeGeometry, rainCellsEnabled], ([geom, enabled]) => {
+  if (enabled && geom && geom.length >= 2) {
+    void fetchRainCells(geom)
+  }
+})
 
 const radarTileUrl = computed(() =>
   radarEnabled.value && radarFrame.value?.tile_url_template ? radarFrame.value.tile_url_template : null,
