@@ -201,27 +201,47 @@ function rainCellGeoJson(cells: TrackedRainCell[]) {
 }
 
 function formatRainCellPopup(props: Record<string, unknown>): string {
-  const lines: string[] = ["<strong>Vùng mưa</strong>"]
+  const lineStyle = 'style="color:#e2e8f0;margin:0 0 4px 0"'
+  const lines: string[] = [`<p ${lineStyle}><strong style="color:#f8fafc">Vùng mưa</strong></p>`]
   if (props.intensity_mean != null) {
-    lines.push(`Chỉ số cường độ: ${Number(props.intensity_mean).toFixed(0)}`)
+    lines.push(`<p ${lineStyle}>Chỉ số cường độ: ${Number(props.intensity_mean).toFixed(0)}</p>`)
   }
   if (props.area_km2 != null) {
-    lines.push(`Diện tích: ~${Number(props.area_km2).toFixed(1)} km²`)
+    lines.push(`<p ${lineStyle}>Diện tích: ~${Number(props.area_km2).toFixed(1)} km²</p>`)
   }
   if (props.speed_kmh != null && props.bearing != null) {
-    lines.push(`Di chuyển: ${bearingToCompass(Number(props.bearing))} · ${Number(props.speed_kmh).toFixed(0)} km/h`)
+    lines.push(
+      `<p ${lineStyle}>Di chuyển: ${bearingToCompass(Number(props.bearing))} · ${Number(props.speed_kmh).toFixed(0)} km/h</p>`,
+    )
   }
   if (props.distance_km != null) {
-    lines.push(`Khoảng cách tới lộ trình: ${Number(props.distance_km).toFixed(1)} km`)
+    lines.push(`<p ${lineStyle}>Khoảng cách tới lộ trình: ${Number(props.distance_km).toFixed(1)} km</p>`)
   }
   if (props.updated) {
     const t = new Date(String(props.updated))
     lines.push(
-      `Cập nhật: ${t.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" })}`,
+      `<p ${lineStyle}>Cập nhật: ${t.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" })}</p>`,
     )
   }
-  lines.push(`<span class="text-slate-400 text-xs">Quan sát hiện tại — không phải dự báo</span>`)
-  return `<div class="text-sm space-y-1">${lines.map((l) => `<div>${l}</div>`).join("")}</div>`
+  lines.push('<p style="color:#94a3b8;font-size:11px;margin:6px 0 0 0">Quan sát hiện tại — không phải dự báo</p>')
+  return `<div style="color:#e2e8f0;font-size:13px;line-height:1.45">${lines.join("")}</div>`
+}
+
+function styleRainCellPopupElement(popup: maplibregl.Popup) {
+  const root = popup.getElement()
+  if (!root) return
+  const content = root.querySelector(".maplibregl-popup-content") as HTMLElement | null
+  const tip = root.querySelector(".maplibregl-popup-tip") as HTMLElement | null
+  if (content) {
+    content.style.background = "#1e293b"
+    content.style.color = "#e2e8f0"
+    content.style.borderRadius = "8px"
+    content.style.boxShadow = "0 8px 24px rgba(15, 23, 42, 0.45)"
+    content.style.padding = "10px 12px"
+  }
+  if (tip) tip.style.borderTopColor = "#1e293b"
+  const close = root.querySelector(".maplibregl-popup-close-button") as HTMLElement | null
+  if (close) close.style.color = "#94a3b8"
 }
 
 function syncRainCellLayers() {
@@ -293,8 +313,15 @@ function syncRainCellLayers() {
     m.on("click", RAIN_CELLS_POINT_LAYER, (e) => {
       const f = e.features?.[0]
       if (!f?.properties || !e.lngLat) return
-      if (!rainCellPopup) rainCellPopup = new maplibreModule!.Popup({ closeButton: true, maxWidth: "280px" })
+      if (!rainCellPopup) {
+        rainCellPopup = new maplibreModule!.Popup({
+          closeButton: true,
+          maxWidth: "280px",
+          className: "rain-cell-popup",
+        })
+      }
       rainCellPopup.setLngLat(e.lngLat).setHTML(formatRainCellPopup(f.properties as Record<string, unknown>)).addTo(m)
+      styleRainCellPopupElement(rainCellPopup)
     })
     m.on("mouseenter", RAIN_CELLS_POINT_LAYER, () => {
       m.getCanvas().style.cursor = "pointer"
@@ -443,3 +470,21 @@ onBeforeUnmount(() => {
   map.value = null
 })
 </script>
+
+<style>
+/* Load after maplibre-gl.css — rain-cell popup must not inherit app light text on white popup shell */
+.maplibregl-popup.rain-cell-popup .maplibregl-popup-content {
+  background: #1e293b !important;
+  color: #e2e8f0 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.45) !important;
+}
+
+.maplibregl-popup.rain-cell-popup .maplibregl-popup-tip {
+  border-top-color: #1e293b !important;
+}
+
+.maplibregl-popup.rain-cell-popup .maplibregl-popup-close-button {
+  color: #94a3b8 !important;
+}
+</style>

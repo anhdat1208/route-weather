@@ -32,3 +32,33 @@ body {
 .input-field {
   @apply w-full rounded-lg border border-slate-600 bg-slate-800/50 px-3 py-2 text-sm text-slate-100 placeholder-slate-400 outline-none transition-colors focus:border-blue-500 focus:ring-1 focus:ring-blue-500;
 }
+
+/* MapLibre rain-cell popup — avoid inheriting app light text on default white popup bg */
+.rain-cell-popup.maplibregl-popup .maplibregl-popup-content {
+  background: #1e293b;
+  color: #e2e8f0;
+  border-radius: 0.5rem;
+  padding: 0.75rem 0.875rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.45);
+}
+
+.rain-cell-popup.maplibregl-popup .maplibregl-popup-close-button {
+  color: #94a3b8;
+  font-size: 1.125rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.rain-cell-popup.maplibregl-popup .maplibregl-popup-close-button:hover {
+  background: transparent;
+  color: #f1f5f9;
+}
+
+.rain-cell-popup.maplibregl-popup .maplibregl-popup-tip {
+  border-top-color: #1e293b;
+}
+
+.rain-cell-popup__body > div + div {
+  margin-top: 0.25rem;
+}
