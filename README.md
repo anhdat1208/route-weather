@@ -21,7 +21,34 @@ Stage 2 bổ sung radar mưa gần thời gian thực lên bản đồ lộ trì
 - Tự làm mới theo chu kỳ cấu hình được
 - Route vẫn hiển thị rõ trên radar (lớp glow)
 
-**Chưa có:** rain-cell tracking, dự báo chuyển động mưa, AI nowcasting, route risk UI, traffic prediction.
+**Chưa có:** dự báo chuyển động mưa tương lai, AI nowcasting, route risk UI, traffic prediction.
+
+## Stage 3 — Rain-cell Detection & Tracking
+
+Stage 3 **diễn giải** dữ liệu radar để phát hiện vùng mưa và theo dõi chuyển động qua các khung radar liên tiếp.
+
+**Có thêm:**
+- Phát hiện vùng mưa (connected regions) trong hành lang lộ trình
+- Lọc nhiễu theo ngưỡng cấu hình được
+- Theo dõi identity vùng mưa qua các khung radar (`NEW` / `TRACKING` / `LOST`)
+- Tốc độ và hướng di chuyển quan sát (haversine + bearing)
+- Lịch sử ngắn theo khung radar
+- Lớp vùng mưa trên map (bbox, centroid, vector hướng)
+- Popup thông tin khi click vùng mưa
+- Khoảng cách vùng mưa tới lộ trình (không có route risk scoring)
+
+**Chưa có:** AI/ML, dự báo vị trí mưa tương lai, route risk scoring, traffic prediction, satellite fusion.
+
+Thuật toán baseline **deterministic** (threshold + connected components + centroid matching). Ngưỡng intensity là **implementation threshold**, không phải phân loại khí tượng chính thức.
+
+```text
+RainViewer tiles (corridor)
+  → intensity grid
+  → detect cells
+  → track across past frames
+  → POST /api/rain-cells/track
+  → useRainCells → RouteMap
+```
 
 ## Tech Stack
 
@@ -37,13 +64,14 @@ User → RouteForm
          ↓
   useRouteWeather ──→ POST /api/route-weather → RouteWeatherEngine
   useRadar       ──→ GET /api/radar/current  → RadarService → RainViewer
+  useRainCells   ──→ POST /api/rain-cells/track → RainCellService
          ↓
-  RouteMap (Base → Radar → Route → Weather points)
+  RouteMap (Base → Radar → Rain Cells → Route → Weather points)
          +
   RadarControls + JourneySummary + WeatherTimeline
 ```
 
-Map layers: Base → Radar (Stage 2) → Route → Weather points. Stubs sẵn cho satellite / rain-cell / traffic.
+Map layers: Base → Radar (Stage 2) → Rain Cells (Stage 3) → Route → Weather points.
 
 ## Yêu cầu
 
@@ -114,6 +142,15 @@ npm run build
 | `RADAR_REFRESH_INTERVAL_SECONDS` | Chu kỳ làm mới radar phía client, mặc định `300` |
 | `RADAR_STALE_AFTER_SECONDS` | Coi radar cũ sau N giây, mặc định `900` |
 | `CACHE_TTL_RADAR` | Cache metadata radar (giây), mặc định `120` |
+| `RAIN_CELL_MIN_INTENSITY` | Ngưỡng intensity pixel (implementation), mặc định `25` |
+| `RAIN_CELL_MIN_AREA_PIXELS` | Diện tích tối thiểu (pixel), mặc định `4` |
+| `RAIN_CELL_MAX_AREA_PIXELS` | Diện tích tối đa (pixel), mặc định `500000` |
+| `RAIN_CELL_MAX_MATCH_DISTANCE_KM` | Khoảng cách match centroid, mặc định `80` |
+| `RAIN_CELL_HISTORY_FRAMES` | Số khung lịch sử giữ lại, mặc định `6` |
+| `RAIN_CELL_MAX_MISSED_FRAMES` | Khung mất trước khi EXPIRED, mặc định `2` |
+| `RAIN_CELL_FRAME_COUNT` | Số khung radar past xử lý, mặc định `4` |
+| `RAIN_CELL_BUFFER_KM` | Buffer hành lang quanh route, mặc định `50` |
+| `RAIN_CELL_TILE_ZOOM` | Zoom tile decode (≤7), mặc định `5` |
 | `ROUTE_WEATHER_SAMPLE_INTERVAL_KM` | Khoảng cách mẫu mục tiêu (km), mặc định `10` |
 | `ROUTE_WEATHER_MIN_POINTS` | Số điểm tối thiểu, mặc định `5` |
 | `ROUTE_WEATHER_MAX_POINTS` | Số điểm tối đa (chống nổ request), mặc định `20` |
@@ -140,10 +177,13 @@ Không commit credentials thật.
 | GET | `/api/geocode` | Autocomplete địa chỉ |
 | POST | `/api/route-weather` | Route + weather (single compute) |
 | GET | `/api/radar/current` | Metadata radar hiện tại (tile URL, timestamp) |
+| POST | `/api/rain-cells/track` | Detect + track vùng mưa trong hành lang lộ trình |
 | POST | `/api/route-weather/compare` | So sánh giờ xuất phát (backend; UI Stage 1 không dùng) |
 
 ## Known limitations
 
+- Rain-cell detection dùng tile RainViewer scheme 0 (grayscale proxy), độ phân giải phụ thuộc zoom/buffer
+- Baseline detector có thể nhầm clutter/nhiễu; không phải storm-cell typing chuyên môn
 - Radar RainViewer: độ phân giải ~1 km, cập nhật ~5–10 phút; tile chỉ có đến **zoom 7** (map zoom sâu hơn sẽ scale tile, không request z>7)
 - RainViewer free tier: attribution bắt buộc, không dùng cho sản phẩm thương mại trả phí (xem [Terms](https://www.rainviewer.com/terms.html))
 - Open-Meteo độ phân giải theo giờ
@@ -156,7 +196,7 @@ Không commit credentials thật.
 
 - [x] Stage 1 — Route Weather MVP
 - [x] Stage 2 — Live Radar
-- [ ] Stage 3 — Rain-cell Tracking
+- [x] Stage 3 — Rain-cell Detection & Tracking
 - [ ] Stage 4 — Satellite + Data Fusion
 - [ ] Stage 5 — AI Nowcasting
 - [ ] Stage 6 — Traffic Prediction
@@ -164,5 +204,6 @@ Không commit credentials thật.
 
 ## Tài liệu
 
-- [Design Spec](docs/superpowers/specs/2026-08-21-route-weather-stage1-design.md)
+- [Design Spec Stage 1](docs/superpowers/specs/2026-08-21-route-weather-stage1-design.md)
+- [Design Spec Stage 3](docs/superpowers/specs/2026-08-24-stage3-rain-cell-tracking-design.md)
 - [Implementation Plan](docs/superpowers/plans/2026-08-21-route-weather-stage1.md)

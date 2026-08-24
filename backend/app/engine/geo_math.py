@@ -64,6 +64,66 @@ def find_point_at_distance_m(points: list[LatLng], cum_dist_m: list[float], targ
     return points[-1]
 
 
+def initial_bearing_deg(a: LatLng, b: LatLng) -> float:
+    """Initial bearing from a to b in degrees (0 = north, clockwise)."""
+
+    lat1 = math.radians(a.lat)
+    lat2 = math.radians(b.lat)
+    dlng = math.radians(b.lng - a.lng)
+    y = math.sin(dlng) * math.cos(lat2)
+    x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlng)
+    bearing = math.degrees(math.atan2(y, x))
+    return (bearing + 360.0) % 360.0
+
+
+def min_distance_to_polyline_m(point: LatLng, polyline: list[LatLng]) -> float:
+    """Minimum haversine distance from point to a route polyline (sampled segments)."""
+
+    if not polyline:
+        raise ValueError("polyline empty")
+
+    best = haversine_distance_m(point, polyline[0])
+    for i in range(len(polyline) - 1):
+        a = polyline[i]
+        b = polyline[i + 1]
+        for t in (0.0, 0.25, 0.5, 0.75, 1.0):
+            best = min(best, haversine_distance_m(point, interpolate_point(a, b, t)))
+    return best
+
+
+def expand_bounds_deg(
+    *,
+    north: float,
+    south: float,
+    east: float,
+    west: float,
+    buffer_km: float,
+) -> tuple[float, float, float, float]:
+    """Expand a WGS84 bounding box by buffer_km (approximate)."""
+
+    mid_lat = (north + south) / 2.0
+    lat_pad = buffer_km / 111.0
+    lng_pad = buffer_km / (111.0 * max(math.cos(math.radians(mid_lat)), 0.01))
+    return (
+        min(90.0, north + lat_pad),
+        max(-90.0, south - lat_pad),
+        min(180.0, east + lng_pad),
+        max(-180.0, west - lng_pad),
+    )
+
+
+def bounds_from_geometry(geometry: list[LatLng], buffer_km: float) -> tuple[float, float, float, float]:
+    lats = [p.lat for p in geometry]
+    lngs = [p.lng for p in geometry]
+    return expand_bounds_deg(
+        north=max(lats),
+        south=min(lats),
+        east=max(lngs),
+        west=min(lngs),
+        buffer_km=buffer_km,
+    )
+
+
 def slice_geometry_by_distance_m(
     points: list[LatLng],
     cum_dist_m: list[float],
