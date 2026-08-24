@@ -14,6 +14,10 @@ const props = defineProps<{
   radarOpacity?: number
   radarTileUrl?: string | null
   radarTileMaxZoom?: number
+  satelliteEnabled?: boolean
+  satelliteOpacity?: number
+  satelliteTileUrl?: string | null
+  satelliteTileMaxZoom?: number
   rainCellsEnabled?: boolean
   trackedCells?: TrackedRainCell[]
 }>()
@@ -32,6 +36,8 @@ const WEATHER_SOURCE = "weather-points"
 const WEATHER_LAYER = "weather-points"
 const RADAR_SOURCE = "radar-tiles"
 const RADAR_LAYER = "radar-tiles"
+const SATELLITE_SOURCE = "satellite-tiles"
+const SATELLITE_LAYER = "satellite-tiles"
 const RAIN_CELLS_POINTS_SOURCE = "rain-cells-points"
 const RAIN_CELLS_BBOX_SOURCE = "rain-cells-bbox"
 const RAIN_CELLS_MOTION_SOURCE = "rain-cells-motion"
@@ -126,6 +132,48 @@ function syncRadarLayer() {
       id: RADAR_LAYER,
       type: "raster",
       source: RADAR_SOURCE,
+      paint: {
+        "raster-opacity": opacity,
+        "raster-fade-duration": 300,
+      },
+    },
+    beforeId,
+  )
+}
+
+function syncSatelliteLayer() {
+  if (!map.value || !maplibreModule) return
+  const m = map.value
+  const showSatellite = props.satelliteEnabled && props.satelliteTileUrl
+
+  if (!showSatellite) {
+    removeLayerSource(m, SATELLITE_LAYER, SATELLITE_SOURCE)
+    return
+  }
+
+  const opacity = props.satelliteOpacity ?? 0.45
+  const tileMaxZoom = props.satelliteTileMaxZoom ?? 6
+  const beforeId = m.getLayer(ROUTE_LAYER) ? ROUTE_LAYER : firstSymbolLayerId(m)
+  const existing = m.getSource(SATELLITE_SOURCE) as maplibregl.RasterTileSource | undefined
+  if (existing && "setTiles" in existing) {
+    existing.setTiles([props.satelliteTileUrl!])
+    m.setPaintProperty(SATELLITE_LAYER, "raster-opacity", opacity)
+    return
+  }
+
+  removeLayerSource(m, SATELLITE_LAYER, SATELLITE_SOURCE)
+  m.addSource(SATELLITE_SOURCE, {
+    type: "raster",
+    tiles: [props.satelliteTileUrl!],
+    tileSize: 256,
+    maxzoom: tileMaxZoom,
+    attribution: "© NASA GIBS / JMA Himawari",
+  })
+  m.addLayer(
+    {
+      id: SATELLITE_LAYER,
+      type: "raster",
+      source: SATELLITE_SOURCE,
       paint: {
         "raster-opacity": opacity,
         "raster-fade-duration": 300,
@@ -418,6 +466,7 @@ function renderRouteLayers() {
 }
 
 function renderAll() {
+  syncSatelliteLayer()
   syncRadarLayer()
   syncRainCellLayers()
   if (props.routeWeather) renderRouteLayers()
@@ -429,6 +478,19 @@ watch(
     if (!map.value) return
     if (map.value.isStyleLoaded()) {
       syncRadarLayer()
+      if (props.routeWeather) renderRouteLayers()
+    } else {
+      map.value.once("load", renderAll)
+    }
+  },
+)
+
+watch(
+  () => [props.satelliteEnabled, props.satelliteOpacity, props.satelliteTileUrl, props.satelliteTileMaxZoom] as const,
+  () => {
+    if (!map.value) return
+    if (map.value.isStyleLoaded()) {
+      syncSatelliteLayer()
       if (props.routeWeather) renderRouteLayers()
     } else {
       map.value.once("load", renderAll)

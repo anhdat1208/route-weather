@@ -44,10 +44,28 @@
         :rain-cell-count="rainCellCountDisplay"
         :rain-cells-frames-used="rainCellsFramesUsed"
         :route-ready="routeReady"
+        :satellite-enabled="satelliteEnabled"
+        :satellite-opacity="satelliteOpacity"
+        :satellite-loading="satelliteLoading"
+        :satellite-error-message="satelliteError"
+        :satellite-status="satelliteFrame?.status ?? null"
+        :satellite-freshness-label="satelliteFreshness"
+        :satellite-timestamp-display="satelliteTimestamp"
         @update:enabled="setRadarEnabled"
         @update:opacity="setRadarOpacity"
         @update:rain-cells-enabled="setRainCellsEnabled"
+        @update:satellite-enabled="setSatelliteEnabled"
+        @update:satellite-opacity="setSatelliteOpacity"
         @refresh="onRefreshLayers"
+      />
+
+      <FusionDebugPanel
+        :enabled="fusionDebugEnabled"
+        :loading="fusionLoading"
+        :error-message="fusionError"
+        :state="fusionState"
+        :can-refresh="fusionCanRefresh"
+        @refresh="refreshFusionDebug"
       />
 
       <p class="text-xs" :class="healthOk ? 'text-green-400' : 'text-red-400'">
@@ -64,6 +82,10 @@
             :radar-opacity="radarOpacity"
             :radar-tile-url="radarTileUrl"
             :radar-tile-max-zoom="radarTileMaxZoom"
+            :satellite-enabled="satelliteEnabled"
+            :satellite-opacity="satelliteOpacity"
+            :satellite-tile-url="satelliteTileUrl"
+            :satellite-tile-max-zoom="satelliteTileMaxZoom"
             :rain-cells-enabled="rainCellsEnabled"
             :tracked-cells="trackedCells"
           />
@@ -76,6 +98,8 @@
 
 <script setup lang="ts">
 import { useRainCells } from "~/composables/useRainCells"
+import { useSatellite } from "~/composables/useSatellite"
+import { useWeatherFusion } from "~/composables/useWeatherFusion"
 
 const {
   healthOk,
@@ -122,6 +146,27 @@ const {
   setEnabled: setRainCellsEnabled,
 } = useRainCells()
 
+const {
+  enabled: satelliteEnabled,
+  opacity: satelliteOpacity,
+  loading: satelliteLoading,
+  errorMessage: satelliteError,
+  frame: satelliteFrame,
+  freshnessLabel: satelliteFreshness,
+  timestampDisplay: satelliteTimestamp,
+  fetchSatellite,
+  setEnabled: setSatelliteEnabled,
+  setOpacity: setSatelliteOpacity,
+} = useSatellite()
+
+const {
+  enabled: fusionDebugEnabled,
+  loading: fusionLoading,
+  errorMessage: fusionError,
+  state: fusionState,
+  fetchFusion,
+} = useWeatherFusion()
+
 const routeGeometry = computed(() => {
   if (!routeWeather.value?.segments) return null
   return routeWeather.value.segments.flatMap((s) => s.coordinates ?? [])
@@ -133,8 +178,12 @@ const rainCellsFramesUsed = computed(() => rainCellsResponse.value?.frames_used 
 
 function onRefreshLayers() {
   void fetchRadar()
+  void fetchSatellite()
   if (rainCellsEnabled.value && routeGeometry.value) {
     void fetchRainCells(routeGeometry.value)
+  }
+  if (fusionCanRefresh.value) {
+    void refreshFusionDebug()
   }
 }
 
@@ -148,8 +197,27 @@ const radarTileUrl = computed(() =>
   radarEnabled.value && radarFrame.value?.tile_url_template ? radarFrame.value.tile_url_template : null,
 )
 const radarTileMaxZoom = computed(() => radarFrame.value?.tile_max_zoom ?? 7)
+const satelliteTileUrl = computed(() =>
+  satelliteEnabled.value && satelliteFrame.value?.tile_url_template ? satelliteFrame.value.tile_url_template : null,
+)
+const satelliteTileMaxZoom = computed(() => satelliteFrame.value?.tile_max_zoom ?? 6)
 
 const departureDisplay = computed(() => (departureLocal.value ? departureLocal.value.slice(11, 16) : "—"))
+const fusionCanRefresh = computed(
+  () => Boolean(routeWeather.value && originSelected.value && destinationSelected.value && departureLocal.value),
+)
+
+async function refreshFusionDebug() {
+  if (!fusionCanRefresh.value || !originSelected.value || !destinationSelected.value) return
+  await fetchFusion({
+    origin: originSelected.value.point,
+    destination: destinationSelected.value.point,
+    departure_time: `${departureLocal.value}:00`,
+    travel_mode: travelMode.value,
+    include_rain_cells: rainCellsEnabled.value,
+  })
+}
+
 const etaDisplay = computed(() => {
   if (!routeWeather.value) return "—"
   const dep = new Date(departureLocal.value)
@@ -160,4 +228,13 @@ const etaDisplay = computed(() => {
 onMounted(() => {
   checkHealth()
 })
+
+watch(
+  [routeWeather, rainCellsEnabled, radarEnabled, satelliteEnabled],
+  () => {
+    if (!fusionDebugEnabled.value || !fusionCanRefresh.value) return
+    void refreshFusionDebug()
+  },
+  { deep: true },
+)
 </script>

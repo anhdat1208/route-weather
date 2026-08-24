@@ -15,6 +15,7 @@ export default defineNuxtConfig({
     public: {
       apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || 'http://localhost:8000',
       mapStyleUrl: process.env.NUXT_PUBLIC_MAP_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty',
+      enableFusionDebug: process.env.NUXT_PUBLIC_ENABLE_FUSION_DEBUG === 'true',
     },
   },
 

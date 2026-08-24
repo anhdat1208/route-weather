@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     rainviewer_api_url: str = "https://api.rainviewer.com"
     radar_refresh_interval_seconds: int = 300
     radar_stale_after_seconds: int = 900
+    satellite_refresh_interval_seconds: int = 600
+    satellite_stale_after_seconds: int = 1800
 
     # Database (unused in MVP)
     database_url: str = ""
@@ -46,6 +48,7 @@ class Settings(BaseSettings):
     cache_ttl_geocode: int = 604800
     cache_ttl_weather: int = 1800
     cache_ttl_radar: int = 120
+    cache_ttl_satellite: int = 300
 
     # Rain-cell detection & tracking (implementation thresholds — not meteorological classes)
     rain_cell_min_intensity: float = 25.0
@@ -57,6 +60,19 @@ class Settings(BaseSettings):
     rain_cell_frame_count: int = 4
     rain_cell_buffer_km: float = 50.0
     rain_cell_tile_zoom: int = 5
+
+    # Satellite provider (NASA GIBS WMTS)
+    satellite_provider_name: str = "nasa_gibs"
+    gibs_wmts_capabilities_url: str = "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/1.0.0/WMTSCapabilities.xml"
+    gibs_satellite_layer: str = "Himawari_AHI_Band13_Clean_Infrared"
+    gibs_tile_matrix_set: str = "GoogleMapsCompatible_Level6"
+    gibs_tile_format: str = "png"
+    gibs_tile_max_zoom: int = 6
+
+    # Fusion thresholds
+    forecast_stale_after_seconds: int = 3600
+    fusion_alignment_max_seconds: int = 1200
+    fusion_corridor_km: float = 25.0
 
     # Route Weather Engine
     route_weather_max_points: int = 20

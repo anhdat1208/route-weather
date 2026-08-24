@@ -18,6 +18,8 @@ try:
     from app.api.geocode import router as geocode_router
     from app.api.radar import router as radar_router
     from app.api.route_weather import router as route_weather_router
+    from app.api.satellite import router as satellite_router
+    from app.api.weather_fusion import router as weather_fusion_router
 
     app.add_middleware(
         CORSMiddleware,
@@ -29,6 +31,8 @@ try:
     )
     app.include_router(geocode_router)
     app.include_router(radar_router)
+    app.include_router(satellite_router)
+    app.include_router(weather_fusion_router)
     app.include_router(route_weather_router)
     try:
         from app.api.rain_cells import router as rain_cells_router

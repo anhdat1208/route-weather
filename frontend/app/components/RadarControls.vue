@@ -86,6 +86,40 @@
         </div>
       </template>
     </div>
+
+    <label class="flex cursor-pointer items-center gap-2">
+      <input
+        type="checkbox"
+        class="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500"
+        :checked="satelliteEnabled"
+        @change="onSatelliteToggle"
+      />
+      <span>Vệ tinh</span>
+    </label>
+
+    <div v-if="satelliteEnabled" class="space-y-2">
+      <label class="block text-xs text-slate-400">
+        Độ mờ vệ tinh: {{ Math.round(satelliteOpacity * 100) }}%
+        <input
+          type="range"
+          min="0.1"
+          max="1"
+          step="0.05"
+          class="mt-1 w-full accent-blue-500"
+          :value="satelliteOpacity"
+          @input="onSatelliteOpacity"
+        />
+      </label>
+      <div v-if="satelliteLoading" class="text-xs text-slate-400">Đang tải vệ tinh…</div>
+      <div v-else-if="satelliteErrorMessage" class="text-xs text-amber-400">{{ satelliteErrorMessage }}</div>
+      <template v-else-if="satelliteTimestampDisplay || satelliteFreshnessLabel">
+        <div class="text-xs" :class="satelliteStatusClass">
+          <span class="font-medium">Satellite</span>
+          <span v-if="satelliteTimestampDisplay"> · {{ satelliteTimestampDisplay }} (UTC+7)</span>
+          <span v-if="satelliteFreshnessLabel"> · {{ satelliteFreshnessLabel }}</span>
+        </div>
+      </template>
+    </div>
   </div>
 </template>
 
@@ -106,12 +140,21 @@ const props = defineProps<{
   rainCellCount: number | null
   rainCellsFramesUsed: number | null
   routeReady: boolean
+  satelliteEnabled: boolean
+  satelliteOpacity: number
+  satelliteLoading: boolean
+  satelliteErrorMessage: string | null
+  satelliteStatus: "ok" | "stale" | "unavailable" | null
+  satelliteFreshnessLabel: string | null
+  satelliteTimestampDisplay: string | null
 }>()
 
 const emit = defineEmits<{
   "update:enabled": [value: boolean]
   "update:opacity": [value: number]
   "update:rainCellsEnabled": [value: boolean]
+  "update:satelliteEnabled": [value: boolean]
+  "update:satelliteOpacity": [value: number]
   refresh: []
 }>()
 
@@ -120,6 +163,12 @@ const legend = computed<RadarLegend | null>(() => props.frame?.legend ?? null)
 const statusClass = computed(() => {
   if (props.frame?.status === "stale") return "text-amber-400"
   if (props.frame?.status === "ok") return "text-green-400"
+  return "text-slate-400"
+})
+
+const satelliteStatusClass = computed(() => {
+  if (props.satelliteStatus === "stale") return "text-amber-400"
+  if (props.satelliteStatus === "ok") return "text-green-400"
   return "text-slate-400"
 })
 
@@ -133,5 +182,13 @@ function onOpacity(event: Event) {
 
 function onRainCellsToggle(event: Event) {
   emit("update:rainCellsEnabled", (event.target as HTMLInputElement).checked)
+}
+
+function onSatelliteToggle(event: Event) {
+  emit("update:satelliteEnabled", (event.target as HTMLInputElement).checked)
+}
+
+function onSatelliteOpacity(event: Event) {
+  emit("update:satelliteOpacity", Number((event.target as HTMLInputElement).value))
 }
 </script>
