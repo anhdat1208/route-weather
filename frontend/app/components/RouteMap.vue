@@ -7,8 +7,10 @@ import type maplibregl from "maplibre-gl"
 import type { RouteWeatherResponse } from "~/types/routeWeather"
 import type { TrackedRainCell } from "~/types/rainCell"
 import type { NowcastModelInfo, PredictedRainCell } from "~/types/nowcasting"
+import type { RoadSegment, TrafficModelInfo, TrafficPrediction, TrafficSelectedHorizon } from "~/types/traffic"
 import { bearingToCompass } from "~/utils/rainCell"
 import { formatNowcastPopup, nowcastGeoJson } from "~/utils/nowcast"
+import { formatTrafficPopup, trafficLineGeoJson } from "~/utils/traffic"
 
 const props = defineProps<{
   routeWeather: RouteWeatherResponse | null
@@ -26,6 +28,12 @@ const props = defineProps<{
   selectedHorizon?: number
   predictedCells?: PredictedRainCell[]
   nowcastModel?: NowcastModelInfo | null
+  trafficEnabled?: boolean
+  trafficPredictionEnabled?: boolean
+  trafficSelectedHorizon?: TrafficSelectedHorizon
+  trafficSegments?: RoadSegment[]
+  trafficPredictionsForHorizon?: TrafficPrediction[]
+  trafficModel?: TrafficModelInfo | null
 }>()
 
 const config = useRuntimeConfig()
@@ -57,10 +65,14 @@ const NOWCAST_BBOX_LAYER = "nowcast-bbox"
 const NOWCAST_POINT_LAYER = "nowcast-points"
 const NOWCAST_POINT_LABEL_LAYER = "nowcast-points-label"
 const NOWCAST_TEAL = "#2dd4bf"
+const TRAFFIC_LINE_SOURCE = "traffic-line"
+const TRAFFIC_LINE_LAYER = "traffic-line-layer"
 
 let rainCellPopup: maplibregl.Popup | null = null
 let nowcastPopup: maplibregl.Popup | null = null
 let nowcastClickBound = false
+let trafficPopup: maplibregl.Popup | null = null
+let trafficClickBound = false
 
 async function ensureMap() {
   if (!process.client || map.value || !mapEl.value) return
@@ -530,6 +542,104 @@ function syncNowcastLayers() {
   bindNowcastLayerEvents(m)
 }
 
+function visibleTrafficMode(): "current" | "predicted" | null {
+  const horizon = props.trafficSelectedHorizon ?? 0
+  if (props.trafficPredictionEnabled && horizon > 0) return "predicted"
+  if (props.trafficEnabled && (!props.trafficPredictionEnabled || horizon === 0)) return "current"
+  return null
+}
+
+function trafficLayerBeforeId(m: maplibregl.Map): string | undefined {
+  if (m.getLayer(WEATHER_LAYER)) return WEATHER_LAYER
+  return undefined
+}
+
+function removeTrafficLayer(m: maplibregl.Map) {
+  removeLayerSource(m, TRAFFIC_LINE_LAYER, TRAFFIC_LINE_SOURCE)
+  trafficPopup?.remove()
+}
+
+function bindTrafficLayerEvents(m: maplibregl.Map) {
+  if (trafficClickBound) return
+  trafficClickBound = true
+  m.on("click", TRAFFIC_LINE_LAYER, (e) => {
+    const f = e.features?.[0]
+    if (!f?.properties || !e.lngLat) return
+    if (!trafficPopup) {
+      trafficPopup = new maplibreModule!.Popup({
+        closeButton: true,
+        maxWidth: "280px",
+        className: "traffic-popup",
+      })
+    }
+    trafficPopup
+      .setLngLat(e.lngLat)
+      .setHTML(formatTrafficPopup(f.properties as Record<string, unknown>, props.trafficModel))
+      .addTo(m)
+    styleRainCellPopupElement(trafficPopup)
+  })
+  m.on("mouseenter", TRAFFIC_LINE_LAYER, () => {
+    m.getCanvas().style.cursor = "pointer"
+  })
+  m.on("mouseleave", TRAFFIC_LINE_LAYER, () => {
+    m.getCanvas().style.cursor = ""
+  })
+}
+
+function syncTrafficLayer() {
+  if (!map.value || !maplibreModule) return
+  const m = map.value
+  const mode = visibleTrafficMode()
+
+  if (!mode) {
+    removeTrafficLayer(m)
+    return
+  }
+
+  const segments = props.trafficSegments ?? []
+  const predictions = props.trafficPredictionsForHorizon ?? []
+  if (!segments.length) {
+    removeTrafficLayer(m)
+    return
+  }
+
+  const gj = trafficLineGeoJson(segments, predictions, mode)
+  if (!gj.features.length) {
+    removeTrafficLayer(m)
+    return
+  }
+
+  const isPredicted = mode === "predicted"
+  const beforeId = trafficLayerBeforeId(m)
+
+  if (m.getSource(TRAFFIC_LINE_SOURCE)) {
+    ;(m.getSource(TRAFFIC_LINE_SOURCE) as maplibregl.GeoJSONSource).setData(gj)
+    m.setPaintProperty(TRAFFIC_LINE_LAYER, "line-opacity", isPredicted ? 0.9 : 0.95)
+    if (isPredicted) {
+      m.setPaintProperty(TRAFFIC_LINE_LAYER, "line-dasharray", [2, 1])
+    } else {
+      m.setPaintProperty(TRAFFIC_LINE_LAYER, "line-dasharray", [1, 0])
+    }
+  } else {
+    m.addSource(TRAFFIC_LINE_SOURCE, { type: "geojson", data: gj })
+    m.addLayer(
+      {
+        id: TRAFFIC_LINE_LAYER,
+        type: "line",
+        source: TRAFFIC_LINE_SOURCE,
+        paint: {
+          "line-color": ["get", "color"],
+          "line-width": 5,
+          "line-opacity": isPredicted ? 0.9 : 0.95,
+          ...(isPredicted ? { "line-dasharray": [2, 1] } : {}),
+        },
+      },
+      beforeId,
+    )
+    bindTrafficLayerEvents(m)
+  }
+}
+
 function renderRouteLayers() {
   if (!map.value || !maplibreModule || !props.routeWeather) return
   const m = map.value
@@ -620,6 +730,7 @@ function renderAll() {
   syncRadarLayer()
   syncRainCellLayers()
   syncNowcastLayers()
+  syncTrafficLayer()
   if (props.routeWeather) renderRouteLayers()
 }
 
@@ -670,6 +781,23 @@ watch(
 )
 
 watch(
+  () =>
+    [
+      props.trafficEnabled,
+      props.trafficPredictionEnabled,
+      props.trafficSelectedHorizon,
+      props.trafficSegments,
+      props.trafficPredictionsForHorizon,
+    ] as const,
+  () => {
+    if (!map.value) return
+    if (map.value.isStyleLoaded()) syncTrafficLayer()
+    else map.value.once("load", renderAll)
+  },
+  { deep: true },
+)
+
+watch(
   () => props.routeWeather,
   async () => {
     await ensureMap()
@@ -691,7 +819,9 @@ onBeforeUnmount(() => {
   endMarker?.remove()
   rainCellPopup?.remove()
   nowcastPopup?.remove()
+  trafficPopup?.remove()
   nowcastClickBound = false
+  trafficClickBound = false
   map.value?.remove()
   map.value = null
 })
@@ -700,7 +830,8 @@ onBeforeUnmount(() => {
 <style>
 /* Load after maplibre-gl.css — rain-cell popup must not inherit app light text on white popup shell */
 .maplibregl-popup.rain-cell-popup .maplibregl-popup-content,
-.maplibregl-popup.nowcast-popup .maplibregl-popup-content {
+.maplibregl-popup.nowcast-popup .maplibregl-popup-content,
+.maplibregl-popup.traffic-popup .maplibregl-popup-content {
   background: #1e293b !important;
   color: #e2e8f0 !important;
   border-radius: 8px !important;
@@ -708,12 +839,14 @@ onBeforeUnmount(() => {
 }
 
 .maplibregl-popup.rain-cell-popup .maplibregl-popup-tip,
-.maplibregl-popup.nowcast-popup .maplibregl-popup-tip {
+.maplibregl-popup.nowcast-popup .maplibregl-popup-tip,
+.maplibregl-popup.traffic-popup .maplibregl-popup-tip {
   border-top-color: #1e293b !important;
 }
 
 .maplibregl-popup.rain-cell-popup .maplibregl-popup-close-button,
-.maplibregl-popup.nowcast-popup .maplibregl-popup-close-button {
+.maplibregl-popup.nowcast-popup .maplibregl-popup-close-button,
+.maplibregl-popup.traffic-popup .maplibregl-popup-close-button {
   color: #94a3b8 !important;
 }
 </style>

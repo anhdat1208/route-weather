@@ -56,12 +56,13 @@ function speedLabel(value: unknown): string {
   return `${Math.round(n)} km/h`
 }
 
-function percentLabel(value: unknown): string | null {
+function percentLabel(value: unknown, signed = false): string | null {
   if (value == null || value === "") return null
   const n = Number(value)
   if (Number.isNaN(n)) return null
   const pct = Math.round(n * 100)
-  return `${pct >= 0 ? "+" : ""}${pct}%`
+  if (signed) return `${pct >= 0 ? "+" : ""}${pct}%`
+  return `${pct}%`
 }
 
 function segmentFeatureProperties(
@@ -201,9 +202,9 @@ export function formatTrafficPopup(
     const confidence = percentLabel(featureProps.confidence)
     lines.push(`<p ${lineStyle}>Độ tin cậy: ${confidence ?? "Không rõ"}</p>`)
 
-    const baseTrend = percentLabel(featureProps.base_speed_delta_pct)
-    const weatherDelta = percentLabel(featureProps.weather_impact_delta_pct)
-    const combined = percentLabel(featureProps.weather_adjusted_delta_pct)
+    const baseTrend = percentLabel(featureProps.base_speed_delta_pct, true)
+    const weatherDelta = percentLabel(featureProps.weather_impact_delta_pct, true)
+    const combined = percentLabel(featureProps.weather_adjusted_delta_pct, true)
     if (baseTrend != null || weatherDelta != null || combined != null) {
       lines.push(
         `<p ${lineStyle}>Xu hướng nền: ${baseTrend ?? "Không rõ"} · Thời tiết: ${weatherDelta ?? "Không rõ"} · Tổng hợp: ${combined ?? "Không rõ"}</p>`,
