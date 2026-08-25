@@ -50,6 +50,14 @@ try:
         import logging
 
         logging.getLogger(__name__).exception("Nowcasting router failed to load")
+    try:
+        from app.api.traffic import router as traffic_router
+
+        app.include_router(traffic_router)
+    except Exception:  # noqa: BLE001 - Stage 6 must not take down radar/route APIs
+        import logging
+
+        logging.getLogger(__name__).exception("Traffic router failed to load")
 except Exception:  # noqa: BLE001 - surface boot failures on Vercel
     import traceback
 
