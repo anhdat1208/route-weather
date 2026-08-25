@@ -91,6 +91,17 @@ class Settings(BaseSettings):
     nowcast_intensity_max: float = 255.0
     nowcast_min_frames_for_full_confidence: int = 3
 
+    traffic_model_name: str = "baseline"
+    traffic_model_version: str = "0.1"
+    traffic_horizons_minutes: list[int] = [5, 10, 15, 30]
+    traffic_sample_interval_km: float = 5.0
+    traffic_sample_min_points: int = 3
+    traffic_sample_max_points: int = 24
+    traffic_free_flow_default_kmh: float = 40.0
+    traffic_stale_after_seconds: int = 900
+    traffic_rain_nearby_km: float = 8.0
+    traffic_base_confidence: float = 0.75
+
     # Server
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
