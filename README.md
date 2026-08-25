@@ -8,7 +8,7 @@
 
 **Có:** nhập origin/destination (+ phương tiện, giờ xuất phát), tính route trên map, sampling điểm theo interval cấu hình được, ETA từng điểm, weather normalized qua adapter, timeline thời tiết, loading/error, weather fail không làm mất route.
 
-**Không có (giai đoạn sau):** satellite, rain-cell tracking, AI nowcasting, traffic prediction, risk scoring trên UI.
+**Không có (giai đoạn sau):** satellite, rain-cell tracking, AI nowcasting, risk scoring trên UI.
 
 ## Stage 2 — Live Radar
 
@@ -21,7 +21,7 @@ Stage 2 bổ sung radar mưa gần thời gian thực lên bản đồ lộ trì
 - Tự làm mới theo chu kỳ cấu hình được
 - Route vẫn hiển thị rõ trên radar (lớp glow)
 
-**Chưa có:** dự báo chuyển động mưa tương lai, AI nowcasting, route risk UI, traffic prediction.
+**Chưa có:** dự báo chuyển động mưa tương lai, AI nowcasting, route risk UI.
 
 ## Stage 3 — Rain-cell Detection & Tracking
 
@@ -37,7 +37,7 @@ Stage 3 **diễn giải** dữ liệu radar để phát hiện vùng mưa và th
 - Popup thông tin khi click vùng mưa
 - Khoảng cách vùng mưa tới lộ trình (không có route risk scoring)
 
-**Chưa có:** AI/ML, dự báo vị trí mưa tương lai, route risk scoring, traffic prediction, satellite fusion.
+**Chưa có:** AI/ML, dự báo vị trí mưa tương lai, route risk scoring, satellite fusion.
 
 Thuật toán baseline **deterministic** (threshold + connected components + centroid matching). Ngưỡng intensity là **implementation threshold**, không phải phân loại khí tượng chính thức.
 
