@@ -620,6 +620,9 @@ function syncTrafficLayer() {
     } else {
       m.setPaintProperty(TRAFFIC_LINE_LAYER, "line-dasharray", [1, 0])
     }
+    if (m.getLayer(TRAFFIC_LINE_LAYER)) {
+      m.moveLayer(TRAFFIC_LINE_LAYER, beforeId)
+    }
   } else {
     m.addSource(TRAFFIC_LINE_SOURCE, { type: "geojson", data: gj })
     m.addLayer(
@@ -723,6 +726,7 @@ function renderRouteLayers() {
     new maplibreModule.LngLatBounds(lineCoords[0], lineCoords[0]),
   )
   m.fitBounds(bounds, { padding: 40 })
+  syncTrafficLayer()
 }
 
 function renderAll() {
@@ -730,8 +734,8 @@ function renderAll() {
   syncRadarLayer()
   syncRainCellLayers()
   syncNowcastLayers()
-  syncTrafficLayer()
   if (props.routeWeather) renderRouteLayers()
+  else syncTrafficLayer()
 }
 
 watch(
