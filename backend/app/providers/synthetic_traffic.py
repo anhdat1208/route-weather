@@ -9,22 +9,10 @@ from app.engine.traffic_state import (
     congestion_from_relative,
     relative_speed,
 )
+from app.engine.traffic_tod import tod_factor
 from app.providers.base import TrafficProvider
 from app.schemas.common import LatLng
 from app.schemas.traffic import RoadSegmentOut, TrafficStateOut
-
-
-def tod_factor(hour: int, weekday: int) -> float:
-    """Time-of-day speed multiplier; weekday 0=Mon … 6=Sun."""
-    if weekday <= 4:
-        if hour in (7, 8) or hour in (17, 18):
-            return 0.70
-        if hour in (6, 9, 16, 19):
-            return 0.82
-        return 0.95
-    if hour in (10, 11, 12, 17, 18):
-        return 0.88
-    return 0.98
 
 
 class SyntheticTrafficProvider(TrafficProvider):
