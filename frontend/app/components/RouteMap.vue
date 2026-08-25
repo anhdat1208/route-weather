@@ -6,7 +6,9 @@
 import type maplibregl from "maplibre-gl"
 import type { RouteWeatherResponse } from "~/types/routeWeather"
 import type { TrackedRainCell } from "~/types/rainCell"
+import type { NowcastModelInfo, PredictedRainCell } from "~/types/nowcasting"
 import { bearingToCompass } from "~/utils/rainCell"
+import { formatNowcastPopup, nowcastGeoJson } from "~/utils/nowcast"
 
 const props = defineProps<{
   routeWeather: RouteWeatherResponse | null
@@ -20,6 +22,10 @@ const props = defineProps<{
   satelliteTileMaxZoom?: number
   rainCellsEnabled?: boolean
   trackedCells?: TrackedRainCell[]
+  nowcastingEnabled?: boolean
+  selectedHorizon?: number
+  predictedCells?: PredictedRainCell[]
+  nowcastModel?: NowcastModelInfo | null
 }>()
 
 const config = useRuntimeConfig()
@@ -44,8 +50,17 @@ const RAIN_CELLS_MOTION_SOURCE = "rain-cells-motion"
 const RAIN_CELLS_BBOX_LAYER = "rain-cells-bbox"
 const RAIN_CELLS_POINT_LAYER = "rain-cells-points"
 const RAIN_CELLS_MOTION_LAYER = "rain-cells-motion"
+const NOWCAST_BBOX_SOURCE = "nowcast-bbox"
+const NOWCAST_POINTS_SOURCE = "nowcast-points"
+const NOWCAST_BBOX_FILL_LAYER = "nowcast-bbox-fill"
+const NOWCAST_BBOX_LAYER = "nowcast-bbox"
+const NOWCAST_POINT_LAYER = "nowcast-points"
+const NOWCAST_POINT_LABEL_LAYER = "nowcast-points-label"
+const NOWCAST_TEAL = "#2dd4bf"
 
 let rainCellPopup: maplibregl.Popup | null = null
+let nowcastPopup: maplibregl.Popup | null = null
+let nowcastClickBound = false
 
 async function ensureMap() {
   if (!process.client || map.value || !mapEl.value) return
@@ -380,6 +395,141 @@ function syncRainCellLayers() {
   }
 }
 
+function visibleNowcastCells(): PredictedRainCell[] {
+  if (!props.nowcastingEnabled || (props.selectedHorizon ?? 0) <= 0) return []
+  const horizon = props.selectedHorizon
+  return (props.predictedCells ?? []).filter((c) => c.forecast_minutes === horizon)
+}
+
+function removeNowcastLayers(m: maplibregl.Map) {
+  if (m.getLayer(NOWCAST_POINT_LABEL_LAYER)) m.removeLayer(NOWCAST_POINT_LABEL_LAYER)
+  if (m.getLayer(NOWCAST_POINT_LAYER)) m.removeLayer(NOWCAST_POINT_LAYER)
+  if (m.getSource(NOWCAST_POINTS_SOURCE)) m.removeSource(NOWCAST_POINTS_SOURCE)
+  if (m.getLayer(NOWCAST_BBOX_LAYER)) m.removeLayer(NOWCAST_BBOX_LAYER)
+  if (m.getLayer(NOWCAST_BBOX_FILL_LAYER)) m.removeLayer(NOWCAST_BBOX_FILL_LAYER)
+  if (m.getSource(NOWCAST_BBOX_SOURCE)) m.removeSource(NOWCAST_BBOX_SOURCE)
+  nowcastPopup?.remove()
+}
+
+function bindNowcastLayerEvents(m: maplibregl.Map) {
+  if (nowcastClickBound) return
+  nowcastClickBound = true
+  const clickLayers = [NOWCAST_POINT_LAYER, NOWCAST_POINT_LABEL_LAYER, NOWCAST_BBOX_FILL_LAYER, NOWCAST_BBOX_LAYER]
+  for (const layerId of clickLayers) {
+    m.on("click", layerId, (e) => {
+      const f = e.features?.[0]
+      if (!f?.properties || !e.lngLat) return
+      if (!nowcastPopup) {
+        nowcastPopup = new maplibreModule!.Popup({
+          closeButton: true,
+          maxWidth: "280px",
+          className: "nowcast-popup",
+        })
+      }
+      nowcastPopup
+        .setLngLat(e.lngLat)
+        .setHTML(formatNowcastPopup(f.properties as Record<string, unknown>, props.nowcastModel))
+        .addTo(m)
+      styleRainCellPopupElement(nowcastPopup)
+    })
+    m.on("mouseenter", layerId, () => {
+      m.getCanvas().style.cursor = "pointer"
+    })
+    m.on("mouseleave", layerId, () => {
+      m.getCanvas().style.cursor = ""
+    })
+  }
+}
+
+function syncNowcastLayers() {
+  if (!map.value || !maplibreModule) return
+  const m = map.value
+  const cells = visibleNowcastCells()
+  const show = cells.length > 0
+
+  if (!show) {
+    removeNowcastLayers(m)
+    return
+  }
+
+  const gj = nowcastGeoJson(cells)
+  const beforeRoute = m.getLayer(ROUTE_LAYER) ? ROUTE_LAYER : firstSymbolLayerId(m)
+
+  if (m.getSource(NOWCAST_BBOX_SOURCE)) {
+    ;(m.getSource(NOWCAST_BBOX_SOURCE) as maplibregl.GeoJSONSource).setData(gj.bbox)
+  } else {
+    m.addSource(NOWCAST_BBOX_SOURCE, { type: "geojson", data: gj.bbox })
+    m.addLayer(
+      {
+        id: NOWCAST_BBOX_FILL_LAYER,
+        type: "fill",
+        source: NOWCAST_BBOX_SOURCE,
+        paint: {
+          "fill-color": NOWCAST_TEAL,
+          "fill-opacity": 0.15,
+        },
+      },
+      beforeRoute ?? undefined,
+    )
+    m.addLayer(
+      {
+        id: NOWCAST_BBOX_LAYER,
+        type: "line",
+        source: NOWCAST_BBOX_SOURCE,
+        paint: {
+          "line-color": NOWCAST_TEAL,
+          "line-width": 2,
+          "line-opacity": 0.85,
+          "line-dasharray": [2, 2],
+        },
+      },
+      beforeRoute ?? undefined,
+    )
+  }
+
+  if (m.getSource(NOWCAST_POINTS_SOURCE)) {
+    ;(m.getSource(NOWCAST_POINTS_SOURCE) as maplibregl.GeoJSONSource).setData(gj.points)
+  } else {
+    m.addSource(NOWCAST_POINTS_SOURCE, { type: "geojson", data: gj.points })
+    m.addLayer(
+      {
+        id: NOWCAST_POINT_LAYER,
+        type: "circle",
+        source: NOWCAST_POINTS_SOURCE,
+        paint: {
+          "circle-radius": 7,
+          "circle-color": NOWCAST_TEAL,
+          "circle-stroke-width": 2,
+          "circle-stroke-color": "#0f172a",
+        },
+      },
+      beforeRoute ?? undefined,
+    )
+    m.addLayer(
+      {
+        id: NOWCAST_POINT_LABEL_LAYER,
+        type: "symbol",
+        source: NOWCAST_POINTS_SOURCE,
+        layout: {
+          "text-field": ["concat", "+", ["to-string", ["get", "forecast_minutes"]], "m"],
+          "text-size": 11,
+          "text-offset": [0, 1.15],
+          "text-anchor": "top",
+          "text-allow-overlap": true,
+        },
+        paint: {
+          "text-color": "#99f6e4",
+          "text-halo-color": "#0f172a",
+          "text-halo-width": 1.2,
+        },
+      },
+      beforeRoute ?? undefined,
+    )
+  }
+
+  bindNowcastLayerEvents(m)
+}
+
 function renderRouteLayers() {
   if (!map.value || !maplibreModule || !props.routeWeather) return
   const m = map.value
@@ -469,6 +619,7 @@ function renderAll() {
   syncSatelliteLayer()
   syncRadarLayer()
   syncRainCellLayers()
+  syncNowcastLayers()
   if (props.routeWeather) renderRouteLayers()
 }
 
@@ -509,6 +660,16 @@ watch(
 )
 
 watch(
+  () => [props.nowcastingEnabled, props.selectedHorizon, props.predictedCells] as const,
+  () => {
+    if (!map.value) return
+    if (map.value.isStyleLoaded()) syncNowcastLayers()
+    else map.value.once("load", renderAll)
+  },
+  { deep: true },
+)
+
+watch(
   () => props.routeWeather,
   async () => {
     await ensureMap()
@@ -528,6 +689,9 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   startMarker?.remove()
   endMarker?.remove()
+  rainCellPopup?.remove()
+  nowcastPopup?.remove()
+  nowcastClickBound = false
   map.value?.remove()
   map.value = null
 })
@@ -535,18 +699,21 @@ onBeforeUnmount(() => {
 
 <style>
 /* Load after maplibre-gl.css — rain-cell popup must not inherit app light text on white popup shell */
-.maplibregl-popup.rain-cell-popup .maplibregl-popup-content {
+.maplibregl-popup.rain-cell-popup .maplibregl-popup-content,
+.maplibregl-popup.nowcast-popup .maplibregl-popup-content {
   background: #1e293b !important;
   color: #e2e8f0 !important;
   border-radius: 8px !important;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.45) !important;
 }
 
-.maplibregl-popup.rain-cell-popup .maplibregl-popup-tip {
+.maplibregl-popup.rain-cell-popup .maplibregl-popup-tip,
+.maplibregl-popup.nowcast-popup .maplibregl-popup-tip {
   border-top-color: #1e293b !important;
 }
 
-.maplibregl-popup.rain-cell-popup .maplibregl-popup-close-button {
+.maplibregl-popup.rain-cell-popup .maplibregl-popup-close-button,
+.maplibregl-popup.nowcast-popup .maplibregl-popup-close-button {
   color: #94a3b8 !important;
 }
 </style>

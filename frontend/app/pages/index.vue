@@ -43,6 +43,12 @@
         :rain-cells-error="rainCellsError"
         :rain-cell-count="rainCellCountDisplay"
         :rain-cells-frames-used="rainCellsFramesUsed"
+        :nowcasting-enabled="nowcastingEnabled"
+        :nowcasting-loading="nowcastingLoading"
+        :nowcasting-error="nowcastingError"
+        :nowcasting-model-label="nowcastingModelLabel"
+        :selected-horizon="selectedHorizon"
+        :nowcast-prediction-count="nowcastPredictionCountDisplay"
         :route-ready="routeReady"
         :satellite-enabled="satelliteEnabled"
         :satellite-opacity="satelliteOpacity"
@@ -54,6 +60,8 @@
         @update:enabled="setRadarEnabled"
         @update:opacity="setRadarOpacity"
         @update:rain-cells-enabled="setRainCellsEnabled"
+        @update:nowcasting-enabled="setNowcastingEnabled"
+        @update:selected-horizon="setHorizon"
         @update:satellite-enabled="setSatelliteEnabled"
         @update:satellite-opacity="setSatelliteOpacity"
         @refresh="onRefreshLayers"
@@ -88,6 +96,10 @@
             :satellite-tile-max-zoom="satelliteTileMaxZoom"
             :rain-cells-enabled="rainCellsEnabled"
             :tracked-cells="trackedCells"
+            :nowcasting-enabled="nowcastingEnabled"
+            :selected-horizon="selectedHorizon"
+            :predicted-cells="predictionsForHorizon"
+            :nowcast-model="nowcastResponse?.model ?? null"
           />
         </ClientOnly>
       </div>
@@ -97,9 +109,11 @@
 </template>
 
 <script setup lang="ts">
+import { useNowcasting } from "~/composables/useNowcasting"
 import { useRainCells } from "~/composables/useRainCells"
 import { useSatellite } from "~/composables/useSatellite"
 import { useWeatherFusion } from "~/composables/useWeatherFusion"
+import { nowcastModelLabel } from "~/utils/nowcast"
 
 const {
   healthOk,
@@ -147,6 +161,18 @@ const {
 } = useRainCells()
 
 const {
+  enabled: nowcastingEnabled,
+  selectedHorizon,
+  loading: nowcastingLoading,
+  errorMessage: nowcastingError,
+  response: nowcastResponse,
+  predictionsForHorizon,
+  fetchNowcast,
+  setEnabled: setNowcastingEnabled,
+  setHorizon,
+} = useNowcasting()
+
+const {
   enabled: satelliteEnabled,
   opacity: satelliteOpacity,
   loading: satelliteLoading,
@@ -175,12 +201,23 @@ const routeGeometry = computed(() => {
 const routeReady = computed(() => (routeGeometry.value?.length ?? 0) >= 2)
 const rainCellCountDisplay = computed(() => (rainCellsEnabled.value && routeReady.value ? cellCount.value : null))
 const rainCellsFramesUsed = computed(() => rainCellsResponse.value?.frames_used ?? null)
+const nowcastingModelLabel = computed(() =>
+  nowcastResponse.value?.model ? nowcastModelLabel(nowcastResponse.value.model) : null,
+)
+const nowcastPredictionCountDisplay = computed(() => {
+  if (!nowcastingEnabled.value || !routeReady.value) return null
+  const preds = nowcastResponse.value?.predictions ?? []
+  return new Set(preds.map((p) => p.cell_id)).size
+})
 
 function onRefreshLayers() {
   void fetchRadar()
   void fetchSatellite()
   if (rainCellsEnabled.value && routeGeometry.value) {
     void fetchRainCells(routeGeometry.value)
+  }
+  if (nowcastingEnabled.value && routeGeometry.value) {
+    void fetchNowcast(routeGeometry.value)
   }
   if (fusionCanRefresh.value) {
     void refreshFusionDebug()
@@ -190,6 +227,12 @@ function onRefreshLayers() {
 watch([routeGeometry, rainCellsEnabled], ([geom, enabled]) => {
   if (enabled && geom && geom.length >= 2) {
     void fetchRainCells(geom)
+  }
+})
+
+watch([routeGeometry, nowcastingEnabled], ([geom, enabled]) => {
+  if (enabled && geom && geom.length >= 2) {
+    void fetchNowcast(geom)
   }
 })
 

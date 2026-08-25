@@ -1,0 +1,1 @@
+feat(nowcast): add baseline extrapolation model

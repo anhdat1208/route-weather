@@ -85,6 +85,12 @@ class Settings(BaseSettings):
     risk_threshold_high: int = 60
     risk_threshold_very_high: int = 80
 
+    nowcast_model_name: str = "baseline"
+    nowcast_model_version: str = "0.1"
+    nowcast_horizons_minutes: list[int] = [5, 10, 15, 30, 60]
+    nowcast_intensity_max: float = 255.0
+    nowcast_min_frames_for_full_confidence: int = 3
+
     # Server
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000

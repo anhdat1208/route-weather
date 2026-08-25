@@ -8,6 +8,25 @@ from app.schemas.common import LatLng
 EARTH_RADIUS_M = 6371000.0
 
 
+def destination_point(origin: LatLng, distance_km: float, bearing_degrees: float) -> LatLng:
+    """Move from origin along initial bearing by distance_km (spherical Earth)."""
+    if distance_km <= 0:
+        return LatLng(lat=origin.lat, lng=origin.lng)
+    lat1 = math.radians(origin.lat)
+    lng1 = math.radians(origin.lng)
+    brng = math.radians(bearing_degrees)
+    angular = (distance_km * 1000.0) / EARTH_RADIUS_M
+    lat2 = math.asin(
+        math.sin(lat1) * math.cos(angular)
+        + math.cos(lat1) * math.sin(angular) * math.cos(brng)
+    )
+    lng2 = lng1 + math.atan2(
+        math.sin(brng) * math.sin(angular) * math.cos(lat1),
+        math.cos(angular) - math.sin(lat1) * math.sin(lat2),
+    )
+    return LatLng(lat=math.degrees(lat2), lng=((math.degrees(lng2) + 540) % 360) - 180)
+
+
 def haversine_distance_m(a: LatLng, b: LatLng) -> float:
     """Distance in meters between two WGS84 points."""
 
