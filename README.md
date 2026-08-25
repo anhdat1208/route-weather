@@ -65,13 +65,14 @@ User → RouteForm
   useRouteWeather ──→ POST /api/route-weather → RouteWeatherEngine
   useRadar       ──→ GET /api/radar/current  → RadarService → RainViewer
   useRainCells   ──→ POST /api/rain-cells/track → RainCellService
+  useNowcasting  ──→ POST /api/nowcasting/predict → NowcastingService
          ↓
-  RouteMap (Base → Radar → Rain Cells → Route → Weather points)
+  RouteMap (Base → Radar → Rain Cells → Predicted nowcast → Route → Weather points)
          +
   RadarControls + JourneySummary + WeatherTimeline
 ```
 
-Map layers: Base → Radar (Stage 2) → Rain Cells (Stage 3) → Route → Weather points.
+Map layers: Base → Radar (Stage 2) → Rain Cells (Stage 3) → Predicted nowcast (Stage 5) → Route → Weather points.
 
 ## Yêu cầu
 
@@ -189,6 +190,7 @@ Không commit credentials thật.
 | GET | `/api/radar/current` | Metadata radar hiện tại (tile URL, timestamp) |
 | GET | `/api/satellite/latest` | Metadata ảnh vệ tinh hiện tại (tile URL, timestamp) |
 | POST | `/api/rain-cells/track` | Detect + track vùng mưa trong hành lang lộ trình |
+| POST | `/api/nowcasting/predict` | Dự báo vị trí vùng mưa 5–60 phút (baseline extrapolation) |
 | POST | `/api/weather-fusion/state` | Unified multi-source weather state theo route segment |
 | POST | `/api/route-weather/compare` | So sánh giờ xuất phát (backend; UI Stage 1 không dùng) |
 
@@ -205,6 +207,7 @@ Không commit credentials thật.
 - Dự báo mang tính xác suất
 - Satellite Stage 4 fuse theo metadata thời gian/chất lượng/provenance; chưa decode pixel ảnh vệ tinh (feature hiện tại lấy từ forecast + rain-cell + timestamp)
 - Conflict radar-satellite dùng deterministic threshold, không tự quyết định nguồn nào “đúng” hơn
+- Nowcasting Stage 5 là baseline extrapolation (`baseline` / `0.1`), không phải ML đã train; confidence giảm theo horizon; thiếu vận tốc thì giữ vị trí; không thay thế radar quan sát
 
 ## Roadmap
 
@@ -212,7 +215,7 @@ Không commit credentials thật.
 - [x] Stage 2 — Live Radar
 - [x] Stage 3 — Rain-cell Detection & Tracking
 - [x] Stage 4 — Satellite + Data Fusion
-- [ ] Stage 5 — AI Nowcasting
+- [x] Stage 5 — AI Nowcasting
 - [ ] Stage 6 — Traffic Prediction
 - [ ] Stage 7 — Route Weather Intelligence
 
@@ -220,6 +223,7 @@ Không commit credentials thật.
 
 - [Design Spec Stage 1](docs/superpowers/specs/2026-08-21-route-weather-stage1-design.md)
 - [Design Spec Stage 3](docs/superpowers/specs/2026-08-24-stage3-rain-cell-tracking-design.md)
+- [Design Spec Stage 5](docs/superpowers/specs/2026-08-25-stage5-ai-nowcasting-design.md)
 - [Implementation Plan](docs/superpowers/plans/2026-08-21-route-weather-stage1.md)
 
 ## Stage 4 — Satellite + Multi-source Data Fusion
@@ -240,7 +244,40 @@ Implemented:
 - fusion debug panel (dev / `NUXT_PUBLIC_ENABLE_FUSION_DEBUG=true`)
 
 Not implemented:
-- AI/ML
-- future prediction
+- trained ML / deep learning (Stage 5 chỉ baseline extrapolation)
 - traffic prediction
 - final route risk engine
+
+## Stage 5 — AI Nowcasting (baseline)
+
+Stage 5 trả lời: vùng mưa đang theo dõi sẽ **có thể** ở đâu trong 5–60 phút tới. Pipeline: tracking Stage 3 → `NowcastingEngine` → `BaselineExtrapolationModel` (`name=baseline`, `version=0.1`) → API + lớp predicted trên map.
+
+Đây **không phải** mô hình ML/DL đã train — chỉ extrapolation chuyển động (tốc độ/hướng quan sát). Chỗ cắm model sau không đổi API/UI.
+
+```text
+Route geometry
+  → POST /api/nowcasting/predict
+  → NowcastingService
+  → RainCellService.track_for_route   ← Stage 3 reuse
+  → NowcastingEngine
+  → BaselineExtrapolationModel (v0.1)
+  → useNowcasting → RouteMap (predicted layers) + timeline NOW/+5m…/+60m
+```
+
+**Có thêm:**
+- `POST /api/nowcasting/predict` với `{ geometry, buffer_km? }`
+- Toggle **Nowcasting (dự báo mưa)** và timeline `NOW / +5m / +10m / +15m / +30m / +60m`
+- Lớp predicted riêng (teal, dashed) — không vẽ như radar quan sát
+
+**Giới hạn baseline:** tuyến tính theo vận tốc hiện tại; thiếu vận tốc thì giữ vị trí + confidence thấp; horizon càng xa càng kém tin cậy; không storm-cell typing, không route-risk.
+
+### Cách test local
+
+Backend:
+
+```bash
+cd backend
+python -m pytest tests/test_geo_math_destination.py tests/test_nowcasting_baseline.py tests/test_nowcasting_engine.py tests/test_nowcasting_api.py tests/test_rain_cells.py tests/test_fusion_engine.py -v
+```
+
+UI: phân tích lộ trình → bật **Nowcasting (dự báo mưa)** → chọn `+5m`…`+60m` để xem vùng mưa dự báo. `NOW` chỉ hiện lớp quan sát (radar / rain cells). Nút **Làm mới** cũng refresh nowcast khi toggle đang bật.

@@ -691,6 +691,7 @@ onBeforeUnmount(() => {
   endMarker?.remove()
   rainCellPopup?.remove()
   nowcastPopup?.remove()
+  nowcastClickBound = false
   map.value?.remove()
   map.value = null
 })
