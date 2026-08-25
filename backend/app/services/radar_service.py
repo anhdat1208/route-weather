@@ -12,17 +12,19 @@ from app.schemas.radar import RadarFrameResponse, RadarLegend, RadarLegendStop
 
 logger = logging.getLogger(__name__)
 
-# RainViewer Universal Blue scale (scheme 2) — approximate display colors.
+# RainViewer Universal Blue (scheme 2) — sampled from official color table.
+# https://www.rainviewer.com/api/color-schemes.html
+# RGBA hex stripped to RGB for legend swatches.
 _RAINVIEWER_LEGEND = RadarLegend(
     provider="rainviewer",
     scheme="universal_blue",
     title="Lượng mưa (radar)",
     stops=[
-        RadarLegendStop(label="Rất nhẹ", color="#a6f28f"),
-        RadarLegendStop(label="Nhẹ", color="#3ea72e"),
-        RadarLegendStop(label="Vừa", color="#ffee00"),
-        RadarLegendStop(label="Mạnh", color="#ff0000"),
-        RadarLegendStop(label="Rất mạnh", color="#e60000"),
+        RadarLegendStop(label="Rất nhẹ", color="#00a3e0"),  # ~20 dBZ cyan/blue
+        RadarLegendStop(label="Nhẹ", color="#005588"),  # ~30 dBZ deep blue
+        RadarLegendStop(label="Vừa", color="#ffee00"),  # ~35 dBZ yellow
+        RadarLegendStop(label="Mạnh", color="#ff4400"),  # ~45 dBZ orange-red
+        RadarLegendStop(label="Rất mạnh", color="#ff77ff"),  # ~60 dBZ magenta
     ],
 )
 
