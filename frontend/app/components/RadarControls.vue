@@ -37,6 +37,50 @@
       <input
         type="checkbox"
         class="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500"
+        :checked="nowcastingEnabled"
+        :disabled="!routeReady"
+        @change="onNowcastingToggle"
+      />
+      <span :class="routeReady ? '' : 'text-slate-500'">Nowcasting (dự báo mưa)</span>
+    </label>
+    <p v-if="!routeReady" class="text-[10px] text-slate-500">Cần có lộ trình để dự báo mưa.</p>
+
+    <div v-if="nowcastingEnabled && routeReady" class="space-y-2">
+      <div class="space-y-1 text-xs">
+        <div v-if="nowcastingLoading" class="text-slate-400">Đang dự báo mưa…</div>
+        <div v-else-if="nowcastingError" class="text-amber-400">{{ nowcastingError }}</div>
+        <div v-else-if="nowcastPredictionCount !== null" class="text-slate-300">
+          {{ nowcastPredictionCount }} vùng mưa dự báo
+        </div>
+      </div>
+
+      <div class="flex flex-wrap gap-1">
+        <button
+          v-for="option in horizonOptions"
+          :key="option.value"
+          type="button"
+          class="rounded border px-2 py-0.5 text-[11px] font-medium"
+          :class="
+            selectedHorizon === option.value
+              ? 'border-blue-500 bg-blue-500/20 text-blue-400'
+              : 'border-slate-600 text-slate-400 hover:border-slate-500 hover:text-slate-200'
+          "
+          @click="$emit('update:selectedHorizon', option.value)"
+        >
+          {{ option.label }}
+        </button>
+      </div>
+
+      <p class="text-[10px] text-slate-500">
+        Dự báo baseline — không phải radar quan sát
+        <span v-if="nowcastingModelLabel"> · {{ nowcastingModelLabel }}</span>
+      </p>
+    </div>
+
+    <label class="flex cursor-pointer items-center gap-2">
+      <input
+        type="checkbox"
+        class="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500"
         :checked="enabled"
         @change="onToggle"
       />
@@ -124,6 +168,7 @@
 </template>
 
 <script setup lang="ts">
+import type { NowcastSelectedHorizon } from "~/types/nowcasting"
 import type { RadarFrameResponse, RadarLegend } from "~/types/radar"
 
 const props = defineProps<{
@@ -147,6 +192,12 @@ const props = defineProps<{
   satelliteStatus: "ok" | "stale" | "unavailable" | null
   satelliteFreshnessLabel: string | null
   satelliteTimestampDisplay: string | null
+  nowcastingEnabled: boolean
+  nowcastingLoading: boolean
+  nowcastingError: string | null
+  nowcastingModelLabel: string | null
+  selectedHorizon: NowcastSelectedHorizon
+  nowcastPredictionCount: number | null
 }>()
 
 const emit = defineEmits<{
@@ -155,8 +206,19 @@ const emit = defineEmits<{
   "update:rainCellsEnabled": [value: boolean]
   "update:satelliteEnabled": [value: boolean]
   "update:satelliteOpacity": [value: number]
+  "update:nowcastingEnabled": [value: boolean]
+  "update:selectedHorizon": [value: NowcastSelectedHorizon]
   refresh: []
 }>()
+
+const horizonOptions: { value: NowcastSelectedHorizon; label: string }[] = [
+  { value: 0, label: "NOW" },
+  { value: 5, label: "+5m" },
+  { value: 10, label: "+10m" },
+  { value: 15, label: "+15m" },
+  { value: 30, label: "+30m" },
+  { value: 60, label: "+60m" },
+]
 
 const legend = computed<RadarLegend | null>(() => props.frame?.legend ?? null)
 
@@ -182,6 +244,10 @@ function onOpacity(event: Event) {
 
 function onRainCellsToggle(event: Event) {
   emit("update:rainCellsEnabled", (event.target as HTMLInputElement).checked)
+}
+
+function onNowcastingToggle(event: Event) {
+  emit("update:nowcastingEnabled", (event.target as HTMLInputElement).checked)
 }
 
 function onSatelliteToggle(event: Event) {
