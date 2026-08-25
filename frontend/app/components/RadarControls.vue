@@ -102,7 +102,9 @@
     <p v-if="!routeReady" class="text-[10px] text-slate-500">Cần có lộ trình để dự báo giao thông.</p>
 
     <div v-if="(trafficEnabled || trafficPredictionEnabled) && routeReady" class="space-y-1 text-xs">
-      <div v-if="trafficLoading" class="text-slate-400">Đang dự báo giao thông…</div>
+      <div v-if="trafficLoading" class="text-slate-400">
+        {{ trafficPredictionEnabled ? "Đang dự báo giao thông…" : "Đang tải giao thông…" }}
+      </div>
       <div v-else-if="trafficError" class="text-amber-400">{{ trafficError }}</div>
       <div v-else-if="trafficSegmentCount !== null" class="text-slate-300">
         {{ trafficSegmentCount }} đoạn đường đang theo dõi

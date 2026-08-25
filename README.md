@@ -66,13 +66,14 @@ User → RouteForm
   useRadar       ──→ GET /api/radar/current  → RadarService → RainViewer
   useRainCells   ──→ POST /api/rain-cells/track → RainCellService
   useNowcasting  ──→ POST /api/nowcasting/predict → NowcastingService
+  useTraffic     ──→ POST /api/traffic/prediction → TrafficService
          ↓
-  RouteMap (Base → Radar → Rain Cells → Predicted nowcast → Route → Weather points)
+  RouteMap (Base → Radar → Rain Cells → Predicted nowcast → Traffic → Route → Weather points)
          +
   RadarControls + JourneySummary + WeatherTimeline
 ```
 
-Map layers: Base → Radar (Stage 2) → Rain Cells (Stage 3) → Predicted nowcast (Stage 5) → Route → Weather points.
+Map layers: Base → Radar (Stage 2) → Rain Cells (Stage 3) → Predicted nowcast (Stage 5) → Traffic (Stage 6) → Route → Weather points.
 
 ## Yêu cầu
 
@@ -191,6 +192,7 @@ Không commit credentials thật.
 | GET | `/api/satellite/latest` | Metadata ảnh vệ tinh hiện tại (tile URL, timestamp) |
 | POST | `/api/rain-cells/track` | Detect + track vùng mưa trong hành lang lộ trình |
 | POST | `/api/nowcasting/predict` | Dự báo vị trí vùng mưa 5–60 phút (baseline extrapolation) |
+| POST | `/api/traffic/prediction` | Giao thông hiện tại + dự báo 5–30 phút (baseline + weather impact) |
 | POST | `/api/weather-fusion/state` | Unified multi-source weather state theo route segment |
 | POST | `/api/route-weather/compare` | So sánh giờ xuất phát (backend; UI Stage 1 không dùng) |
 
@@ -208,6 +210,7 @@ Không commit credentials thật.
 - Satellite Stage 4 fuse theo metadata thời gian/chất lượng/provenance; chưa decode pixel ảnh vệ tinh (feature hiện tại lấy từ forecast + rain-cell + timestamp)
 - Conflict radar-satellite dùng deterministic threshold, không tự quyết định nguồn nào “đúng” hơn
 - Nowcasting Stage 5 là baseline extrapolation (`baseline` / `0.1`), không phải ML đã train; confidence giảm theo horizon; thiếu vận tốc thì giữ vị trí; không thay thế radar quan sát
+- Traffic Stage 6 dùng `SyntheticTrafficProvider` — giao thông demo/heuristic, **không phải** live traffic; baseline trend + rule-based weather impact; nowcast được gọi nội bộ backend
 
 ## Roadmap
 
@@ -216,7 +219,7 @@ Không commit credentials thật.
 - [x] Stage 3 — Rain-cell Detection & Tracking
 - [x] Stage 4 — Satellite + Data Fusion
 - [x] Stage 5 — AI Nowcasting
-- [ ] Stage 6 — Traffic Prediction
+- [x] Stage 6 — Traffic Prediction
 - [ ] Stage 7 — Route Weather Intelligence
 
 ## Tài liệu
@@ -224,6 +227,7 @@ Không commit credentials thật.
 - [Design Spec Stage 1](docs/superpowers/specs/2026-08-21-route-weather-stage1-design.md)
 - [Design Spec Stage 3](docs/superpowers/specs/2026-08-24-stage3-rain-cell-tracking-design.md)
 - [Design Spec Stage 5](docs/superpowers/specs/2026-08-25-stage5-ai-nowcasting-design.md)
+- [Design Spec Stage 6](docs/superpowers/specs/2026-08-25-stage6-traffic-prediction-design.md)
 - [Implementation Plan](docs/superpowers/plans/2026-08-21-route-weather-stage1.md)
 
 ## Stage 4 — Satellite + Multi-source Data Fusion
@@ -245,7 +249,7 @@ Implemented:
 
 Not implemented:
 - trained ML / deep learning (Stage 5 chỉ baseline extrapolation)
-- traffic prediction
+- live traffic provider (Stage 6 dùng synthetic baseline)
 - final route risk engine
 
 ## Stage 5 — AI Nowcasting (baseline)
@@ -281,3 +285,41 @@ python -m pytest tests/test_geo_math_destination.py tests/test_nowcasting_baseli
 ```
 
 UI: phân tích lộ trình → bật **Nowcasting (dự báo mưa)** → chọn `+5m`…`+60m` để xem vùng mưa dự báo. `NOW` chỉ hiện lớp quan sát (radar / rain cells). Nút **Làm mới** cũng refresh nowcast khi toggle đang bật.
+
+## Stage 6 — Traffic Prediction (baseline)
+
+Stage 6 trả lời: trên lộ trình này, giao thông **hiện tại** và **có thể** thay đổi thế nào trong 5–30 phút tới khi kết hợp baseline traffic + tác động mưa dự báo (nowcast Stage 5 gọi nội bộ backend).
+
+Đây **không phải** live traffic hay mô hình ML đã train — `SyntheticTrafficProvider` tạo dữ liệu demo deterministic; `BaselineTrafficModel` + `WeatherImpactModel` rule-based. Thiết kế modular để sau này cắm provider live / ML mà không đổi API/UI.
+
+```text
+Route geometry (client)
+  → POST /api/traffic/prediction
+  → TrafficService
+  → SyntheticTrafficProvider → RoadSegment[] + TrafficState (current)
+  → BaselineTrafficModel → base prediction per segment × horizon
+  → NowcastingEngine (Stage 5 reuse, internal)
+  → WeatherImpactModel → weather impact per segment × horizon
+  → TrafficPredictionEngine.combine
+  → useTraffic → RouteMap (traffic layers) + timeline NOW/+5m…/+30m
+```
+
+**Có thêm:**
+- `POST /api/traffic/prediction` với `{ geometry, buffer_km? }`
+- Toggle **Giao thông** (current) và **Dự báo giao thông** (predicted)
+- Timeline traffic độc lập: `NOW / +5m / +10m / +15m / +30m` (không +60m)
+- Lớp segment trên map (màu theo congestion); predicted dashed; click popup giải thích segment
+- Disclaimer: giao thông synthetic, không phải live
+
+**Giới hạn baseline:** heuristic time-of-day + synthetic speeds; weather impact rule-based từ nowcast; confidence giảm theo horizon; không traffic-aware ETA; không route-risk scoring.
+
+### Cách test local
+
+Backend:
+
+```bash
+cd backend
+python -m pytest tests/test_traffic_state.py tests/test_traffic_synthetic.py tests/test_traffic_baseline.py tests/test_weather_impact.py tests/test_traffic_engine.py tests/test_traffic_api.py tests/test_nowcasting_baseline.py tests/test_nowcasting_engine.py tests/test_nowcasting_api.py tests/test_rain_cells.py tests/test_fusion_engine.py -v
+```
+
+UI: phân tích lộ trình → bật **Giao thông** để xem tắc đường hiện tại (NOW) → bật **Dự báo giao thông** → chọn `+5m`…`+30m` để xem segment dự báo. Nút **Làm mới** cũng refresh traffic khi toggle đang bật.
