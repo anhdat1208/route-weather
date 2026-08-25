@@ -545,7 +545,8 @@ function syncNowcastLayers() {
 function visibleTrafficMode(): "current" | "predicted" | null {
   const horizon = props.trafficSelectedHorizon ?? 0
   if (props.trafficPredictionEnabled && horizon > 0) return "predicted"
-  if (props.trafficEnabled && (!props.trafficPredictionEnabled || horizon === 0)) return "current"
+  if (props.trafficPredictionEnabled && horizon === 0) return "current"
+  if (props.trafficEnabled) return "current"
   return null
 }
 

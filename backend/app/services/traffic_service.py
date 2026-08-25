@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from app.config import settings
@@ -9,6 +10,8 @@ from app.schemas.common import LatLng
 from app.schemas.nowcasting import NowcastModelInfo, NowcastPredictionResponse
 from app.schemas.traffic import TrafficPredictionResponse
 from app.services.nowcasting_service import get_nowcasting_service
+
+logger = logging.getLogger(__name__)
 
 
 def _unavailable_nowcast() -> NowcastPredictionResponse:
@@ -39,6 +42,9 @@ class TrafficService:
                 geometry, buffer_km=buffer_km
             )
         except Exception:  # noqa: BLE001 - nowcast must not fail traffic
+            logger.exception(
+                "Nowcast failed for traffic prediction; using unavailable fallback"
+            )
             nowcast = _unavailable_nowcast()
 
         return run_traffic_prediction(segments, nowcast=nowcast, at=at)
