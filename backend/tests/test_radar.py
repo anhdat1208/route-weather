@@ -66,6 +66,11 @@ async def test_radar_service_returns_ok_status():
     assert result.tile_url_template is not None
     assert result.legend is not None
     assert result.legend.provider == "rainviewer"
+    assert result.legend.scheme == "universal_blue"
+    # Legend must match Universal Blue tile colors (not green→red).
+    stop_colors = [s.color.lower() for s in result.legend.stops]
+    assert "#00a3e0" in stop_colors
+    assert not any(c.startswith("#3ea7") or c.startswith("#a6f2") for c in stop_colors)
 
 
 @pytest.mark.asyncio
