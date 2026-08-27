@@ -49,6 +49,13 @@
         :nowcasting-model-label="nowcastingModelLabel"
         :selected-horizon="selectedHorizon"
         :nowcast-prediction-count="nowcastPredictionCountDisplay"
+        :traffic-enabled="trafficEnabled"
+        :traffic-prediction-enabled="trafficPredictionEnabled"
+        :traffic-loading="trafficLoading"
+        :traffic-error="trafficError"
+        :traffic-model-label="trafficModelLabelDisplay"
+        :traffic-selected-horizon="trafficSelectedHorizon"
+        :traffic-segment-count="trafficSegmentCountDisplay"
         :route-ready="routeReady"
         :satellite-enabled="satelliteEnabled"
         :satellite-opacity="satelliteOpacity"
@@ -61,6 +68,9 @@
         @update:opacity="setRadarOpacity"
         @update:rain-cells-enabled="setRainCellsEnabled"
         @update:nowcasting-enabled="setNowcastingEnabled"
+        @update:traffic-enabled="setTrafficEnabled"
+        @update:traffic-prediction-enabled="setTrafficPredictionEnabled"
+        @update:traffic-selected-horizon="setTrafficHorizon"
         @update:selected-horizon="setHorizon"
         @update:satellite-enabled="setSatelliteEnabled"
         @update:satellite-opacity="setSatelliteOpacity"
@@ -100,6 +110,12 @@
             :selected-horizon="selectedHorizon"
             :predicted-cells="predictionsForHorizon"
             :nowcast-model="nowcastResponse?.model ?? null"
+            :traffic-enabled="trafficEnabled"
+            :traffic-prediction-enabled="trafficPredictionEnabled"
+            :traffic-selected-horizon="trafficSelectedHorizon"
+            :traffic-segments="trafficResponse?.segments ?? []"
+            :traffic-predictions-for-horizon="trafficPredictionsForHorizon"
+            :traffic-model="trafficResponse?.model ?? null"
           />
         </ClientOnly>
       </div>
@@ -112,8 +128,10 @@
 import { useNowcasting } from "~/composables/useNowcasting"
 import { useRainCells } from "~/composables/useRainCells"
 import { useSatellite } from "~/composables/useSatellite"
+import { useTraffic } from "~/composables/useTraffic"
 import { useWeatherFusion } from "~/composables/useWeatherFusion"
 import { nowcastModelLabel } from "~/utils/nowcast"
+import { trafficModelLabel } from "~/utils/traffic"
 
 const {
   healthOk,
@@ -173,6 +191,20 @@ const {
 } = useNowcasting()
 
 const {
+  enabled: trafficEnabled,
+  predictionEnabled: trafficPredictionEnabled,
+  selectedHorizon: trafficSelectedHorizon,
+  loading: trafficLoading,
+  errorMessage: trafficError,
+  response: trafficResponse,
+  predictionsForHorizon: trafficPredictionsForHorizon,
+  fetchTraffic,
+  setEnabled: setTrafficEnabled,
+  setPredictionEnabled: setTrafficPredictionEnabled,
+  setHorizon: setTrafficHorizon,
+} = useTraffic()
+
+const {
   enabled: satelliteEnabled,
   opacity: satelliteOpacity,
   loading: satelliteLoading,
@@ -209,6 +241,13 @@ const nowcastPredictionCountDisplay = computed(() => {
   const preds = nowcastResponse.value?.predictions ?? []
   return new Set(preds.map((p) => p.cell_id)).size
 })
+const trafficSegmentCountDisplay = computed(() => {
+  if ((!trafficEnabled.value && !trafficPredictionEnabled.value) || !routeReady.value) return null
+  return trafficResponse.value?.segments?.length ?? null
+})
+const trafficModelLabelDisplay = computed(() =>
+  trafficResponse.value?.model ? trafficModelLabel(trafficResponse.value.model) : null,
+)
 
 function onRefreshLayers() {
   void fetchRadar()
@@ -218,6 +257,9 @@ function onRefreshLayers() {
   }
   if (nowcastingEnabled.value && routeGeometry.value) {
     void fetchNowcast(routeGeometry.value)
+  }
+  if ((trafficEnabled.value || trafficPredictionEnabled.value) && routeGeometry.value) {
+    void fetchTraffic(routeGeometry.value)
   }
   if (fusionCanRefresh.value) {
     void refreshFusionDebug()
@@ -233,6 +275,12 @@ watch([routeGeometry, rainCellsEnabled], ([geom, enabled]) => {
 watch([routeGeometry, nowcastingEnabled], ([geom, enabled]) => {
   if (enabled && geom && geom.length >= 2) {
     void fetchNowcast(geom)
+  }
+})
+
+watch([routeGeometry, trafficEnabled, trafficPredictionEnabled], ([geom, trafficOn, predictionOn]) => {
+  if ((trafficOn || predictionOn) && geom && geom.length >= 2) {
+    void fetchTraffic(geom)
   }
 })
 

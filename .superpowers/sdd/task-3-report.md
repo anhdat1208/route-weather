@@ -1,105 +1,120 @@
-# Task 3 Report: NowcastingEngine
+# Task 3 Report: BaselineTrafficModel
 
-**Branch:** `feat/stage5-ai-nowcasting`  
-**Date:** 2026-08-25  
-**Status:** DONE
+**Branch:** `feat/stage6-traffic-prediction`  
+**Commit:** `bf9df6c` — `feat(traffic): add baseline traffic prediction model`  
+**Date:** 2026-08-25
 
-## Summary
+## Scope
 
-Implemented `run_nowcast`: takes a Stage 3 `RainCellTrackResponse`, runs the active `NowcastingModel` (default `BaselineExtrapolationModel`), and returns a normalized `NowcastPredictionResponse` with status, model identity, horizons, and Vietnamese messages. No service, API, or frontend (out of scope).
+Implemented Task 3 only per brief:
+- Extracted `tod_factor` + `hour_weekday` / `tod_factor_at` into `backend/app/engine/traffic_tod.py`
+- Updated `SyntheticTrafficProvider` to import `tod_factor` from `traffic_tod`
+- `TrafficPredictionModel` Protocol + `BaselineTrafficModel` in `backend/app/engine/traffic_models.py`
+- Tests in `backend/tests/test_traffic_baseline.py` (verbatim from brief)
+
+No weather impact, engine combine, API, or frontend were added.
 
 ## TDD Evidence
 
-### RED — Step 1–2: Failing tests first
+### RED — Step 2 (failing tests first)
 
-Created `backend/tests/test_nowcasting_engine.py` with the four named cases from the brief plus two status-rule cases (unavailable default message; missing-motion → partial). Production module did not exist yet.
+Created `backend/tests/test_traffic_baseline.py` with two test functions verbatim from the brief, then ran:
 
-```text
-$ cd backend; python -m pytest tests/test_nowcasting_engine.py -v
-
-ImportError while importing test module '.../tests/test_nowcasting_engine.py'.
-tests\test_nowcasting_engine.py:6: in <module>
-    from app.engine.nowcasting_engine import run_nowcast
-E   ModuleNotFoundError: No module named 'app.engine.nowcasting_engine'
-============================== 1 error in 0.48s ===============================
+```
+cd backend; python -m pytest tests/test_traffic_baseline.py -v
 ```
 
-Failure reason matches expectation: `nowcasting_engine` not yet implemented.
+Output:
 
-### GREEN — Step 3–4: Minimal implementation
-
-Added `backend/app/engine/nowcasting_engine.py`:
-
-- `run_nowcast(track, *, model=None, generated_at=None, radar_age_seconds=None)`
-- Default model `BaselineExtrapolationModel()`; injected `NowcastingModel` supported
-- `horizons` from `settings.nowcast_horizons_minutes`; `model` info from `name`/`version`; `frames_used` from track
-- `radar_age_seconds` optional kwarg, default `None`, forwarded to `predict` and the response
-- Status: `unavailable` passthrough (no predict, keep track message or Vietnamese default) → track `partial` → any prediction with `confidence < 0.35` **and** missing speed/bearing → empty predictions with track ok → else `ok`
-
-```text
-$ cd backend; python -m pytest tests/test_nowcasting_engine.py -v
-
-tests/test_nowcasting_engine.py::test_engine_unavailable_passthrough PASSED
-tests/test_nowcasting_engine.py::test_engine_unavailable_uses_vietnamese_default PASSED
-tests/test_nowcasting_engine.py::test_engine_empty_cells_ok_with_message PASSED
-tests/test_nowcasting_engine.py::test_engine_runs_baseline_and_sets_model_info PASSED
-tests/test_nowcasting_engine.py::test_engine_partial_when_track_partial PASSED
-tests/test_nowcasting_engine.py::test_engine_partial_when_missing_motion PASSED
-6 passed in 0.31s
+```
+ModuleNotFoundError: No module named 'app.engine.traffic_models'
 ```
 
-### Full suite (regression)
+Result: **FAIL** as expected (module missing).
 
-```text
-$ cd backend; python -m pytest -q
-58 passed in 3.94s
+### GREEN — Step 4 (implementation)
+
+Implemented:
+1. `traffic_tod.py` — locked `tod_factor(hour, weekday)`, `hour_weekday(at)`, `tod_factor_at(at)`
+2. `traffic_models.py` — `TrafficPredictionModel` Protocol + `BaselineTrafficModel` with locked 40% ToD drift algorithm
+3. Refactored `synthetic_traffic.py` to import `tod_factor` from `traffic_tod`
+
+Re-ran:
+
+```
+cd backend; python -m pytest tests/test_traffic_baseline.py tests/test_traffic_synthetic.py tests/test_traffic_state.py -v
 ```
 
-(52 existing after Task 2 + 6 new.)
+Output:
 
-## Deliverables Checklist
+```
+8 passed in 0.28s
+```
 
-- [x] `run_nowcast` in `nowcasting_engine.py`
-- [x] Consumes `RainCellTrackResponse` + `BaselineExtrapolationModel` / injected `NowcastingModel`
-- [x] Produces `NowcastPredictionResponse`
-- [x] Status rules: unavailable / track partial / missing-motion partial / empty ok / ok
-- [x] Model info, horizons, frames_used, optional `radar_age_seconds`
-- [x] Tests: `test_nowcasting_engine.py` (4 named + 2 status-rule cases)
-- [x] Did not create service/API/frontend
-- [x] Commit on feature branch
+Result: **PASS** — all 8 tests green (2 baseline + 3 synthetic + 3 state).
 
-## Commit
+## Files Changed
 
-| SHA | Subject |
-|-----|---------|
-| `0ec15b3` | feat(nowcast): add nowcasting engine orchestrator |
+| File | Action |
+|------|--------|
+| `backend/app/engine/traffic_tod.py` | Created — shared ToD helpers |
+| `backend/app/engine/traffic_models.py` | Created — Protocol + BaselineTrafficModel |
+| `backend/app/providers/synthetic_traffic.py` | Modified — import `tod_factor` from `traffic_tod` |
+| `backend/tests/test_traffic_baseline.py` | Created — unit tests |
 
-Commit via `git.exe -F` workaround (per machine constraint).
+## Interfaces Delivered
+
+### `TrafficPredictionModel` (Protocol)
+
+```python
+@property
+def name(self) -> str: ...
+@property
+def version(self) -> str: ...
+def predict_base(
+    self,
+    segments: Sequence[RoadSegmentOut],
+    *,
+    at: datetime,
+    horizons: list[int],
+) -> list[tuple[str, int, SpeedCongestionPair]]: ...
+```
+
+### `BaselineTrafficModel.predict_base`
+
+Per segment × horizon (skip `traffic is None` or missing `free_flow_speed_kmh`):
+
+1. `current = traffic.current_speed_kmh` (fallback `free_flow` if None)
+2. `expected_future = clamp(free * tod_factor_at(at + h), free)`
+3. `base_speed = clamp(current + 0.40 * (expected_future - current), free)`
+4. `speed_delta_pct = (base_speed / current) - 1` if `current > 0` else `0`
+5. `congestion` from `relative_speed` + `congestion_from_relative`
+
+`name` / `version` from `settings.traffic_model_name` / `settings.traffic_model_version` (`baseline` / `0.1`).
 
 ## Self-Review
 
 ### Correctness
 
-- Unavailable with cells still returns `predictions=[]` and does not call the model.
-- Unavailable without track message uses Vietnamese default.
-- Track `ok` + empty cells → `ok`, `predictions=[]`, Vietnamese empty message.
-- Track `ok` + TRACKING cell with motion → 5 predicted horizons, `model=baseline/0.1`, `status=ok`.
-- Track `partial` keeps `partial` even when predictions exist; preserves track message.
-- Missing speed on an otherwise ok track → `partial` + incomplete-motion Vietnamese message (baseline +60 min confidence drops below 0.35).
+- Locked algorithm matches brief; no invented history beyond ToD drift.
+- All horizons emitted per segment (`len(segs) * 4` for 4 horizons).
+- Predicted speeds stay within clamp band `[0.20 * free, 1.05 * free]`.
+- Synthetic provider behavior unchanged after `tod_factor` extraction (3 synthetic tests still pass).
 
-### Scope
+### Conventions
 
-- Did not modify Stage 1–4 paths.
-- Did not add `NowcastingService`, API router, or frontend.
+- Follows `nowcasting_models.py` pattern (Protocol + settings-backed name/version).
+- Shared ToD logic in `engine/` avoids circular imports between provider and model.
 
-### Concerns (non-blocking)
+### Concerns / Follow-ups
 
-- `NowcastingModel` protocol only declares `predict`; engine reads `name`/`version` by duck typing (Baseline already exposes them). An injected stub without those attributes would raise `AttributeError`.
-- Incomplete-motion gate uses `confidence < 0.35` (brief verbatim), not `<= 0.35`. Baseline clamps missing-motion confidence **to** 0.35 at short horizons; default horizons include 60 min so the gate still fires. A caller injecting `horizons=[5]` via settings-only path is not possible here (engine always uses settings list).
+- **`expected_now` unused:** Brief lists it for documentation; drift uses `current` (observed) → `expected_future` only.
+- **`missing_current` flag:** Not surfaced in `SpeedCongestionPair`; fallback to `free_flow` is internal only — Task 5 engine may need confidence handling.
+- **Timezone:** Same as Task 2 — `tod_factor_at` uses datetime's own tz; tests use UTC.
 
-## Files
+## Verification Commands
 
-| Path | Action |
-|------|--------|
-| `backend/app/engine/nowcasting_engine.py` | created |
-| `backend/tests/test_nowcasting_engine.py` | created |
+```powershell
+cd backend
+python -m pytest tests/test_traffic_baseline.py tests/test_traffic_synthetic.py tests/test_traffic_state.py -v
+```

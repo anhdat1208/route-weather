@@ -1,97 +1,105 @@
-﻿### Task 2: BaselineExtrapolationModel (TDD core)
+﻿### Task 2: TrafficProvider + SyntheticTrafficProvider
 
 **Files:**
-- Create: `backend/app/engine/nowcasting_models.py`
-- Create: `backend/tests/test_nowcasting_baseline.py`
+- Modify: `backend/app/providers/base.py`
+- Create: `backend/app/providers/synthetic_traffic.py`
+- Create: `backend/tests/test_traffic_synthetic.py`
 
 **Interfaces:**
-- Consumes: `TrackedRainCellOut`, `destination_point`, settings horizons / intensity max
+- Consumes: `sample_points_by_distance`, `TrafficStateOut`, `RoadSegmentOut`, settings
 - Produces:
-  - `class NowcastingModel(Protocol): def predict(self, cells, *, frames_used: int, radar_age_seconds: int | None, horizons: list[int]) -> list[PredictedRainCell]`
-  - `class BaselineExtrapolationModel: ...` with `name`/`version` properties
-  - Helpers used by tests: intensity trend, confidence decay (can be module-private)
+  - `class TrafficProvider(Protocol): def current_for_route(self, geometry: list[LatLng], *, at: datetime | None = None) -> list[RoadSegmentOut]: ...`
+  - `SyntheticTrafficProvider.current_for_route(...)`
 
-**Algorithm locked by tests:**
-- Eligible states: `TRACKING`, `NEW` only
-- Distance km = `speed_kmh * (forecast_minutes / 60)`
-- Missing speed or bearing â†’ hold centroid/bounds; confidence â‰¤ 0.35 for that cell-horizon
-- Intensity: linear slope from history means if â‰¥2 samples; else current mean; clamp `[0, nowcast_intensity_max]`
-- `rain_probability = clamp(intensity / nowcast_intensity_max, 0, 1)` (None if intensity None)
-- Confidence base = `motion.confidence` or `0.4`; multiply by horizon factor `max(0.25, 1 - forecast_minutes/90)`; Ã—0.7 if `frames_used < nowcast_min_frames_for_full_confidence`; Ã—0.75 if `len(history) < 2`; Ã—0.5 if missing motion vector; if `radar_age_seconds` and `> settings.radar_stale_after_seconds` Ã—0.6
+**ToD curve (lock this formula â€” tests depend on it):**
 
-- [ ] **Step 1: Write failing baseline tests**
-
-Create `backend/tests/test_nowcasting_baseline.py` with fixtures building `TrackedRainCellOut` + `CellMotionOut` + history. Cover at minimum:
-
-```python
-def test_horizons_emit_five_predictions_per_cell():
-    ...
-    preds = model.predict([cell], frames_used=4, radar_age_seconds=120, horizons=[5, 10, 15, 30, 60])
-    assert sorted({p.forecast_minutes for p in preds}) == [5, 10, 15, 30, 60]
-    assert all(p.kind == "predicted" for p in preds)
-    assert all(p.cell_id == "c1" for p in preds)
-
-
-def test_projects_centroid_with_speed_and_bearing():
-    # speed 60 km/h east â†’ +5 min â‰ˆ 5 km east
-    ...
-
-
-def test_missing_velocity_holds_position_low_confidence():
-    ...
-
-
-def test_missing_direction_holds_position_low_confidence():
-    ...
-
-
-def test_intensity_extrapolates_from_history():
-    ...
-
-
-def test_intensity_fallback_without_history():
-    ...
-
-
-def test_confidence_decreases_with_horizon():
-    confs = [p.confidence for p in preds if p.cell_id == "c1"]
-    assert confs == sorted(confs, reverse=True)
-
-
-def test_stale_radar_reduces_confidence():
-    ...
-
-
-def test_short_history_reduces_confidence():
-    ...
-
-
-def test_lost_cells_omitted():
-    ...
-
-
-def test_no_cells_returns_empty():
-    assert model.predict([], frames_used=3, radar_age_seconds=60, horizons=[5, 10, 15, 30, 60]) == []
+```text
+tod_factor(hour, weekday):
+  weekday 0â€“4 (Monâ€“Fri):
+    hour in [7, 8] or [17, 18] â†’ 0.70
+    hour in [6, 9, 16, 19] â†’ 0.82
+    else â†’ 0.95
+  weekend:
+    hour in [10, 11, 12, 17, 18] â†’ 0.88
+    else â†’ 0.98
+current = clamp(free_flow * tod_factor * (1 - 0.04 * (index % 5)), free_flow)
 ```
 
-Use `haversine_distance_m` assertions (Â±500 m tolerance for 5 km projection).
+Always `source="synthetic"`, `stale=False` for freshly built snapshots. `road_type="unknown"`. `id=f"route-seg-{i}"`. Geometry = `[samples[i].point, samples[i+1].point]` (N samples â†’ N-1 segments).
 
-- [ ] **Step 2: Run tests â€” expect fail**
+- [ ] **Step 1: Write failing synthetic tests**
 
-Run: `cd backend; python -m pytest tests/test_nowcasting_baseline.py -v`  
-Expected: FAIL import / missing module
+```python
+from __future__ import annotations
 
-- [ ] **Step 3: Implement `nowcasting_models.py`**
+from datetime import datetime, timezone
 
-Implement protocol + `BaselineExtrapolationModel` exactly matching the algorithm above. Translate bounds by the same lat/lng delta as centroid when bounds exist. Set `source="rain_cell_track+baseline"`, `motion` from input speed/bearing used.
+from app.providers.synthetic_traffic import SyntheticTrafficProvider
+from app.schemas.common import LatLng
 
-- [ ] **Step 4: Run tests â€” expect pass**
 
-Run: `cd backend; python -m pytest tests/test_nowcasting_baseline.py -v`  
-Expected: all PASS
+GEOM = [LatLng(lat=10.70, lng=106.65), LatLng(lat=10.85, lng=106.80)]
+
+
+def test_synthetic_builds_labeled_segments():
+    segs = SyntheticTrafficProvider().current_for_route(
+        GEOM, at=datetime(2026, 8, 25, 8, 0, tzinfo=timezone.utc)  # Tue 08:00 UTC
+    )
+    assert len(segs) >= 1
+    assert segs[0].id == "route-seg-0"
+    assert segs[0].traffic is not None
+    assert segs[0].traffic.source == "synthetic"
+    assert segs[0].traffic.stale is False
+    assert segs[0].traffic.congestion_level is not None
+    assert len(segs[0].geometry) == 2
+
+
+def test_synthetic_rush_hour_slower_than_night():
+    p = SyntheticTrafficProvider()
+    rush = p.current_for_route(GEOM, at=datetime(2026, 8, 25, 8, 0, tzinfo=timezone.utc))
+    night = p.current_for_route(GEOM, at=datetime(2026, 8, 25, 2, 0, tzinfo=timezone.utc))
+    assert rush[0].traffic.current_speed_kmh < night[0].traffic.current_speed_kmh
+
+
+def test_synthetic_same_timestamp_is_deterministic():
+    p = SyntheticTrafficProvider()
+    at = datetime(2026, 8, 25, 12, 0, tzinfo=timezone.utc)
+    a = p.current_for_route(GEOM, at=at)
+    b = p.current_for_route(GEOM, at=at)
+    assert a[0].traffic.current_speed_kmh == b[0].traffic.current_speed_kmh
+```
+
+- [ ] **Step 2: Run â€” expect fail**
+
+Run: `cd backend; python -m pytest tests/test_traffic_synthetic.py -v`
+
+- [ ] **Step 3: Implement Protocol + provider**
+
+Add to `backend/app/providers/base.py`:
+
+```python
+from datetime import datetime
+from app.schemas.traffic import RoadSegmentOut
+
+class TrafficProvider(Protocol):
+    def current_for_route(
+        self,
+        geometry: list[LatLng],
+        *,
+        at: datetime | None = None,
+    ) -> list[RoadSegmentOut]:
+        ...
+```
+
+Create `backend/app/providers/synthetic_traffic.py` implementing `tod_factor` and `current_for_route` as specified. Use `sample_points_by_distance` with `interval_km=settings.traffic_sample_interval_km`, `min_points=settings.traffic_sample_min_points`, `max_points=settings.traffic_sample_max_points`. Fill `TrafficStateOut` via `relative_speed` + `congestion_from_relative` + `clamp_speed`. `timestamp=at` (default `datetime.now(timezone.utc)`).
+
+- [ ] **Step 4: Tests pass**
+
+Run: `cd backend; python -m pytest tests/test_traffic_synthetic.py tests/test_traffic_state.py -v`
 
 - [ ] **Step 5: Commit**
 
-Message: `feat(nowcast): add baseline extrapolation model`
+Message: `feat(traffic): add synthetic traffic provider`
 
 ---
+

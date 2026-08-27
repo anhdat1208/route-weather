@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 
 from app.schemas.geocode import GeocodeResult
 from app.schemas.common import LatLng, TravelMode
+from app.schemas.traffic import RoadSegmentOut
 from app.schemas.weather import WeatherSnapshot
 
 
@@ -54,5 +56,15 @@ class RadarFrameResult:
 
 class RadarProvider(Protocol):
     async def fetch_current_frame(self) -> RadarFrameResult:
+        ...
+
+
+class TrafficProvider(Protocol):
+    def current_for_route(
+        self,
+        geometry: list[LatLng],
+        *,
+        at: datetime | None = None,
+    ) -> list[RoadSegmentOut]:
         ...
 

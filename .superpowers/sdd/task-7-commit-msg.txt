@@ -1,1 +1,1 @@
-feat(nowcast): render predicted rain cells on map
+feat(traffic): add frontend types and useTraffic composable

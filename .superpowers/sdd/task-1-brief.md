@@ -1,85 +1,122 @@
-﻿### Task 1: Geo helper + config + schemas
+﻿### Task 1: Config, schemas, congestion helpers
 
 **Files:**
-- Modify: `backend/app/engine/geo_math.py`
 - Modify: `backend/app/config.py`
-- Create: `backend/app/schemas/nowcasting.py`
-- Create: `backend/tests/test_geo_math_destination.py`
+- Create: `backend/app/schemas/traffic.py`
+- Create: `backend/app/engine/traffic_state.py`
+- Create: `backend/tests/test_traffic_state.py`
 
 **Interfaces:**
 - Produces:
-  - `destination_point(origin: LatLng, distance_km: float, bearing_degrees: float) -> LatLng`
-  - Settings: `nowcast_model_name: str = "baseline"`, `nowcast_model_version: str = "0.1"`, `nowcast_horizons_minutes: list[int]` default `[5,10,15,30,60]`, `nowcast_intensity_max: float = 255.0`, `nowcast_min_frames_for_full_confidence: int = 3`
-  - Schemas: `NowcastPredictRequest`, `NowcastModelInfo`, `PredictedCellMotion`, `PredictedRainCell`, `NowcastPredictionResponse`
+  - Settings fields listed in Step 3
+  - `congestion_from_relative(relative: float | None) -> CongestionLevel | None`
+  - `relative_speed(current: float | None, free_flow: float | None) -> float | None`
+  - `clamp_speed(speed: float, free_flow: float | None) -> float`
+  - Schemas: `TrafficPredictRequest`, `TrafficStateOut`, `RoadSegmentOut`, `TrafficPredictionOut`, `TrafficPredictionResponse`, `WeatherImpactInfo`, `SpeedCongestionPair`, `TrafficModelInfo`
 
-- [ ] **Step 1: Write failing destination_point test**
+- [ ] **Step 1: Write failing congestion tests**
 
-Create `backend/tests/test_geo_math_destination.py`:
+Create `backend/tests/test_traffic_state.py`:
 
 ```python
 from __future__ import annotations
 
-from app.engine.geo_math import destination_point, haversine_distance_m
-from app.schemas.common import LatLng
+from app.engine.traffic_state import (
+    clamp_speed,
+    congestion_from_relative,
+    relative_speed,
+)
 
 
-def test_destination_point_north_1km():
-    origin = LatLng(lat=10.0, lng=106.0)
-    dest = destination_point(origin, distance_km=1.0, bearing_degrees=0.0)
-    dist_m = haversine_distance_m(origin, dest)
-    assert abs(dist_m - 1000.0) < 15.0
-    assert dest.lat > origin.lat
-    assert abs(dest.lng - origin.lng) < 1e-4
+def test_relative_speed_and_none():
+    assert relative_speed(40.0, 40.0) == 1.0
+    assert abs(relative_speed(20.0, 40.0) - 0.5) < 1e-9
+    assert relative_speed(None, 40.0) is None
+    assert relative_speed(20.0, 0.0) is None
 
 
-def test_destination_point_east_and_zero():
-    origin = LatLng(lat=10.0, lng=106.0)
-    east = destination_point(origin, distance_km=2.0, bearing_degrees=90.0)
-    assert east.lng > origin.lng
-    same = destination_point(origin, distance_km=0.0, bearing_degrees=123.0)
-    assert same.lat == origin.lat and same.lng == origin.lng
+def test_congestion_bands():
+    assert congestion_from_relative(0.95) == "free"
+    assert congestion_from_relative(0.80) == "slow"
+    assert congestion_from_relative(0.60) == "moderate"
+    assert congestion_from_relative(0.40) == "heavy"
+    assert congestion_from_relative(0.20) == "severe"
+    assert congestion_from_relative(None) is None
+
+
+def test_clamp_speed_band():
+    assert clamp_speed(50.0, 40.0) == 42.0  # 1.05 * free_flow
+    assert clamp_speed(2.0, 40.0) == 8.0    # 0.20 * free_flow floor
+    assert clamp_speed(30.0, None) == 30.0
 ```
 
 - [ ] **Step 2: Run test â€” expect fail**
 
-Run: `cd backend; python -m pytest tests/test_geo_math_destination.py -v`  
-Expected: FAIL `ImportError` / `destination_point` missing
+Run: `cd backend; python -m pytest tests/test_traffic_state.py -v`  
+Expected: FAIL `ImportError` / module missing
 
-- [ ] **Step 3: Implement destination_point + config + schemas**
+- [ ] **Step 3: Implement helpers + config + schemas**
 
-Add to `geo_math.py`:
-
-```python
-def destination_point(origin: LatLng, distance_km: float, bearing_degrees: float) -> LatLng:
-    """Move from origin along initial bearing by distance_km (spherical Earth)."""
-    if distance_km <= 0:
-        return LatLng(lat=origin.lat, lng=origin.lng)
-    lat1 = math.radians(origin.lat)
-    lng1 = math.radians(origin.lng)
-    brng = math.radians(bearing_degrees)
-    angular = (distance_km * 1000.0) / EARTH_RADIUS_M
-    lat2 = math.asin(
-        math.sin(lat1) * math.cos(angular)
-        + math.cos(lat1) * math.sin(angular) * math.cos(brng)
-    )
-    lng2 = lng1 + math.atan2(
-        math.sin(brng) * math.sin(angular) * math.cos(lat1),
-        math.cos(angular) - math.sin(lat1) * math.sin(lat2),
-    )
-    return LatLng(lat=math.degrees(lat2), lng=((math.degrees(lng2) + 540) % 360) - 180)
-```
-
-Append to `Settings` in `config.py`:
+Create `backend/app/engine/traffic_state.py`:
 
 ```python
-    nowcast_model_name: str = "baseline"
-    nowcast_model_version: str = "0.1"
-    nowcast_horizons_minutes: list[int] = [5, 10, 15, 30, 60]
-    nowcast_intensity_max: float = 255.0
-    nowcast_min_frames_for_full_confidence: int = 3
+from __future__ import annotations
+
+from typing import Literal
+
+CongestionLevel = Literal["free", "slow", "moderate", "heavy", "severe"]
+
+# relative = current / free_flow
+_FREE = 0.85
+_SLOW = 0.70
+_MODERATE = 0.50
+_HEAVY = 0.30
+_MAX_VS_FREE = 1.05
+_MIN_VS_FREE = 0.20
+
+
+def relative_speed(current: float | None, free_flow: float | None) -> float | None:
+    if current is None or free_flow is None or free_flow <= 0:
+        return None
+    return current / free_flow
+
+
+def congestion_from_relative(relative: float | None) -> CongestionLevel | None:
+    if relative is None:
+        return None
+    if relative >= _FREE:
+        return "free"
+    if relative >= _SLOW:
+        return "slow"
+    if relative >= _MODERATE:
+        return "moderate"
+    if relative >= _HEAVY:
+        return "heavy"
+    return "severe"
+
+
+def clamp_speed(speed: float, free_flow: float | None) -> float:
+    if free_flow is None or free_flow <= 0:
+        return max(0.0, speed)
+    return max(free_flow * _MIN_VS_FREE, min(free_flow * _MAX_VS_FREE, speed))
 ```
 
-Create `backend/app/schemas/nowcasting.py`:
+Append to `Settings` in `backend/app/config.py`:
+
+```python
+    traffic_model_name: str = "baseline"
+    traffic_model_version: str = "0.1"
+    traffic_horizons_minutes: list[int] = [5, 10, 15, 30]
+    traffic_sample_interval_km: float = 5.0
+    traffic_sample_min_points: int = 3
+    traffic_sample_max_points: int = 24
+    traffic_free_flow_default_kmh: float = 40.0
+    traffic_stale_after_seconds: int = 900
+    traffic_rain_nearby_km: float = 8.0
+    traffic_base_confidence: float = 0.75
+```
+
+Create `backend/app/schemas/traffic.py`:
 
 ```python
 from __future__ import annotations
@@ -90,62 +127,87 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app.schemas.common import LatLng
-from app.schemas.rain_cell import CellBoundsOut
 
-NowcastStatus = Literal["ok", "partial", "unavailable"]
+TrafficStatus = Literal["ok", "partial", "unavailable"]
+NowcastEmbedStatus = Literal["ok", "partial", "unavailable", "skipped"]
+CongestionLevel = Literal["free", "slow", "moderate", "heavy", "severe"]
+WeatherImpactLevel = Literal["none", "low", "moderate", "high"]
+RoadType = Literal["arterial", "local", "unknown"]
 
 
-class NowcastPredictRequest(BaseModel):
+class TrafficPredictRequest(BaseModel):
     geometry: list[LatLng] = Field(..., min_length=2)
     buffer_km: float | None = Field(default=None, ge=1, le=300)
 
 
-class NowcastModelInfo(BaseModel):
+class TrafficModelInfo(BaseModel):
     name: str
     version: str
 
 
-class PredictedCellMotion(BaseModel):
+class TrafficStateOut(BaseModel):
+    current_speed_kmh: float | None = None
+    free_flow_speed_kmh: float | None = None
+    congestion_level: CongestionLevel | None = None
+    relative_speed: float | None = None
+    timestamp: datetime
+    source: str
+    stale: bool = False
+
+
+class RoadSegmentOut(BaseModel):
+    id: str
+    geometry: list[LatLng]
+    road_type: str | None = None
+    name: str | None = None
+    traffic: TrafficStateOut | None = None
+
+
+class SpeedCongestionPair(BaseModel):
     speed_kmh: float | None = None
-    bearing_degrees: float | None = None
+    congestion: CongestionLevel | None = None
+    speed_delta_pct: float | None = None
 
 
-class PredictedRainCell(BaseModel):
-    cell_id: str
-    forecast_minutes: int
-    kind: Literal["predicted"] = "predicted"
-    centroid: LatLng
-    bounds: CellBoundsOut | None = None
+class WeatherImpactInfo(BaseModel):
+    speed_delta_pct: float
+    level: WeatherImpactLevel
     rain_probability: float | None = Field(default=None, ge=0, le=1)
     rain_intensity: float | None = None
+    reasons: list[str] = Field(default_factory=list)
+
+
+class TrafficPredictionOut(BaseModel):
+    road_segment_id: str
+    forecast_minutes: int
+    predicted_speed_kmh: float | None = None
+    predicted_congestion: CongestionLevel | None = None
     confidence: float = Field(..., ge=0, le=1)
-    motion: PredictedCellMotion | None = None
-    source: str = "rain_cell_track+baseline"
+    base_prediction: SpeedCongestionPair
+    weather_impact: WeatherImpactInfo
+    weather_adjusted: SpeedCongestionPair
+    model: TrafficModelInfo
 
 
-class NowcastPredictionResponse(BaseModel):
+class TrafficPredictionResponse(BaseModel):
     generated_at: datetime
-    status: NowcastStatus
-    model: NowcastModelInfo
-    frames_used: int
-    radar_age_seconds: int | None = None
+    status: TrafficStatus
+    model: TrafficModelInfo
     horizons: list[int]
-    predictions: list[PredictedRainCell]
+    segments: list[RoadSegmentOut]
+    predictions: list[TrafficPredictionOut]
+    nowcast_status: NowcastEmbedStatus
     message: str | None = None
 ```
 
-- [ ] **Step 4: Re-run destination tests â€” expect pass**
+- [ ] **Step 4: Re-run tests â€” expect pass**
 
-Run: `cd backend; python -m pytest tests/test_geo_math_destination.py -v`  
+Run: `cd backend; python -m pytest tests/test_traffic_state.py -v`  
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
-```bash
-git add backend/app/engine/geo_math.py backend/app/config.py backend/app/schemas/nowcasting.py backend/tests/test_geo_math_destination.py
-# commit via git.exe -F if wrapper breaks
-```
-
-Message: `feat(nowcast): add geo destination helper and nowcasting schemas`
+Message: `feat(traffic): add schemas and congestion helpers`
 
 ---
+

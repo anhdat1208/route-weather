@@ -1,22 +1,28 @@
-﻿### Task 7: RouteMap predicted layers + inspection panel
+﻿### Task 7: Frontend types + `useTraffic` + GeoJSON utils
 
 **Files:**
-- Modify: `frontend/app/components/RouteMap.vue`
-- Optionally small helper already in `utils/nowcast.ts`
+- Create: `frontend/app/types/traffic.ts`
+- Create: `frontend/app/composables/useTraffic.ts`
+- Create: `frontend/app/utils/traffic.ts`
 
 **Interfaces:**
-- New props: `nowcastingEnabled?: boolean`, `selectedHorizon?: number`, `predictedCells?: PredictedRainCell[]`, `nowcastModel?: { name: string; version: string } | null`
-- Layers (distinct IDs): `nowcast-bbox`, `nowcast-points` â€” dashed line / teal fill opacity ~0.15, circle color `#2dd4bf`, text field `+{forecast_minutes}m` if MapLibre symbol feasible; otherwise popup only
-- Show layers only when `nowcastingEnabled && selectedHorizon > 0 && predictedCells.length`
-- Click â†’ popup Vietnamese fields: Nowcasting, forecast, probability %, intensity label, confidence %, movement, model Baseline v0.1, disclaimer predicted
-- Do not reuse observed rain-cell layer IDs or colors (observed uses yellow/red)
+- Mirror backend types. `TrafficHorizon = 5 | 10 | 15 | 30`. `TrafficSelectedHorizon = 0 | TrafficHorizon`.
+- `useTraffic()`: `enabled` (`useState("traffic-enabled")`), `predictionEnabled` (`useState("traffic-prediction-enabled")`), `selectedHorizon` (`useState("traffic-horizon")` default 0), `loading`, `errorMessage`, `response`, `setEnabled`, `setPredictionEnabled`, `setHorizon`, `fetchTraffic(geometry)`.
+- Fetch when **either** toggle is on and geometry length â‰¥ 2. Endpoint `POST /api/traffic/prediction`. Refresh 300s. If `status==="unavailable"` set error from message.
+- `predictionsForHorizon`: filter `predictions` by `forecast_minutes === selectedHorizon` when horizon > 0.
+- Utils:
+  - `congestionColor(level)`: free `#22c55e`, slow `#eab308`, moderate `#f97316`, heavy `#ef4444`, severe `#991b1b`, null `#64748b`
+  - `trafficLineGeoJson(segments, predictionsForHorizon, mode: "current" | "predicted")`
+  - `formatTrafficPopup(...)` Vietnamese fields matching spec panel + synthetic disclaimer
+  - `trafficModelLabel` like nowcast
 
-- [ ] **Step 1: Implement GeoJSON update watchers mirroring rain-cell pattern in `RouteMap.vue`**
+Predicted GeoJSON: use `predicted_congestion` / `predicted_speed_kmh` from the matching prediction; skip segments without a prediction.
 
-- [ ] **Step 2: Manual sanity (dev server) optional; ensure no TS errors in component
+- [ ] **Step 1: Add files** (no frontend unit test runner in repo)
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 2: Commit**
 
-Message: `feat(nowcast): render predicted rain cells on map`
+Message: `feat(traffic): add frontend types and useTraffic composable`
 
 ---
+

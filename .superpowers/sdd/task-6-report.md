@@ -1,64 +1,90 @@
-# Task 6 Report: RadarControls — toggle + timeline
+# Task 6 Report: TrafficService + API
 
-**Branch:** `feat/stage5-ai-nowcasting`  
+**Branch:** `feat/stage6-traffic-prediction`  
+**Commit:** `cafbe3f` — `feat(traffic): expose POST /api/traffic/prediction`  
 **Date:** 2026-08-25  
-**Status:** DONE_WITH_CONCERNS
+**Status:** DONE
 
-## Summary
+## Scope
 
-Extended `RadarControls.vue` with a Nowcasting checkbox (same rain-cells pattern: disabled without route, status lines) and a horizon timeline (`NOW`, `+5m`, `+10m`, `+15m`, `+30m`, `+60m`) when `nowcastingEnabled && routeReady`. Selected horizon uses existing blue accent classes. Disclaimer `Dự báo baseline — không phải radar quan sát` plus optional model label.
+Implemented Task 6 per plan (`docs/superpowers/plans/2026-08-25-stage6-traffic-prediction.md`):
+- `backend/app/services/traffic_service.py` — `TrafficService.predict_for_route`, `get_traffic_service()` singleton
+- `backend/app/api/traffic.py` — `POST /api/traffic/prediction`
+- `backend/app/main.py` — isolated try/except router include
+- `backend/tests/test_traffic_api.py` — API mock + nowcast failure resilience
+
+No frontend (Tasks 7–10).
 
 ## TDD Evidence
 
-No frontend Jest (same as Task 5). Brief restricted edits to this Vue file only, so no new test file.
+### RED — Step 2
 
-TypeScript check after implementation:
-
-```text
-$ cd frontend; npx tsc -p .nuxt/tsconfig.app.json --noEmit --pretty false
-(exit 0, no diagnostics)
+```
+cd backend; python -m pytest tests/test_traffic_api.py -v
 ```
 
-`npx nuxi typecheck` was not used (`vue-tsc` not installed). No browser verification in this task (controls are not wired in `index.vue` until Task 8).
+```
+ModuleNotFoundError: No module named 'app.services.traffic_service'
+```
 
-## Deliverables Checklist
+### GREEN — Step 4
 
-- [x] Props: `nowcastingEnabled`, `nowcastingLoading`, `nowcastingError`, `nowcastingModelLabel`, `selectedHorizon` (`NowcastSelectedHorizon`), `nowcastPredictionCount`; `routeReady` already existed
-- [x] Emits: `update:nowcastingEnabled`, `update:selectedHorizon`
-- [x] Timeline buttons only when `nowcastingEnabled && routeReady`; NOW → `0`, else `5/10/15/30/60`
-- [x] Note: `Dự báo baseline — không phải radar quan sát` + model label
-- [x] Toggle markup follows rain-cells (checkbox + loading/error/count)
-- [x] Commit on feature branch
-- [x] Did not modify other files
+```
+cd backend; python -m pytest tests/test_traffic_api.py tests/test_traffic_engine.py tests/test_nowcasting_api.py -v
+```
 
-## Commit
+```
+11 passed in 0.96s
+```
 
-| SHA | Subject |
-|-----|---------|
-| `7c3d646` | feat(nowcast): add nowcasting toggle and horizon timeline UI |
+## Files Changed
 
-Commit via `git.exe -F` workaround (per machine constraint).
+| File | Action |
+|------|--------|
+| `backend/app/services/traffic_service.py` | Created — synthetic segments → nowcast → engine |
+| `backend/app/api/traffic.py` | Created — POST endpoint |
+| `backend/app/main.py` | Modified — traffic router with isolated try/except |
+| `backend/tests/test_traffic_api.py` | Created — 2 tests |
+
+## Interfaces Delivered
+
+```python
+class TrafficService:
+    async def predict_for_route(
+        self, geometry: list[LatLng], buffer_km: float | None = None
+    ) -> TrafficPredictionResponse: ...
+
+def get_traffic_service() -> TrafficService: ...
+```
+
+Flow: `SyntheticTrafficProvider().current_for_route` → try `get_nowcasting_service().predict_for_route` (exception → unavailable nowcast with empty predictions) → `run_traffic_prediction`.
+
+## Test Coverage
+
+| Scenario | Asserted |
+|----------|----------|
+| API with mocked service | 200, model/horizons/predictions |
+| Nowcast raises at service level | status ok, nowcast_status unavailable, zero weather impact, Vietnamese message |
 
 ## Self-Review
 
 ### Correctness
 
-- Toggle disabled when `!routeReady`; helper copy mirrors rain cells.
-- Horizon list is the spec set; selected state uses `border-blue-500` / `text-blue-400` / `bg-blue-500/20`.
-- `selectedHorizon` typed as `NowcastSelectedHorizon` so emit values stay `0 | 5 | 10 | 15 | 30 | 60`.
+- Nowcast exceptions do not fail the traffic request; engine receives unavailable nowcast.
+- Router registration mirrors nowcasting isolated try/except pattern.
+- Singleton pattern matches `get_nowcasting_service()`.
 
 ### Scope
 
-- Only `frontend/app/components/RadarControls.vue`. `index.vue` / `RouteMap` left for Tasks 7–8.
+- Backend only; no frontend changes.
 
 ### Concerns (non-blocking)
 
-- New props are required (same as rain cells). Until Task 8 wires `index.vue`, Vue will warn about missing props at runtime; the toggle stays off because `nowcastingEnabled` is falsy.
-- No unit tests and no in-browser pass; UI behavior is unverified until wiring.
-- Duplicate “Cần có lộ trình…” lines when both rain-cells and nowcasting need a route; matches the rain-cells pattern rather than merging copy.
+- Broad `except Exception` on nowcast — intentional per spec; any nowcast outage degrades gracefully.
+- Service test hits real synthetic provider + engine (not fully mocked); acceptable integration coverage.
 
-## Files
+## Commit
 
-| Path | Action |
-|------|--------|
-| `frontend/app/components/RadarControls.vue` | modified |
+| SHA | Subject |
+|-----|---------|
+| `cafbe3f` | feat(traffic): expose POST /api/traffic/prediction |

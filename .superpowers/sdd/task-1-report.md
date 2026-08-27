@@ -1,98 +1,134 @@
-# Task 1 Report: Geo helper + config + schemas
+# Task 1 Report: Config, schemas, congestion helpers
 
-**Branch:** `feat/stage5-ai-nowcasting`  
-**Date:** 2026-08-25  
-**Status:** DONE
+**Branch:** `feat/stage6-traffic-prediction`  
+**Commit:** `cb5881a` — `feat(traffic): add schemas and congestion helpers`  
+**Date:** 2026-08-25
 
-## Summary
+## Scope
 
-Implemented Stage 5 nowcasting foundation: spherical `destination_point` geo helper, nowcast settings in `Settings`, and Pydantic schemas for predict request/response. No model, API route, or frontend changes (out of scope).
+Implemented Task 1 only per brief:
+- Settings fields for traffic prediction in `backend/app/config.py`
+- Pydantic schemas in `backend/app/schemas/traffic.py`
+- Congestion helpers in `backend/app/engine/traffic_state.py`
+- Tests in `backend/tests/test_traffic_state.py`
+
+No providers, engines, API, or frontend were added.
 
 ## TDD Evidence
 
-### RED — Step 1–2: Failing test first
+### RED — Step 2 (failing tests first)
 
-Created `backend/tests/test_geo_math_destination.py` with two tests (north 1 km, east 2 km + zero distance).
+Created `backend/tests/test_traffic_state.py` with three test functions verbatim from the brief, then ran:
 
-```text
-$ cd backend; python -m pytest tests/test_geo_math_destination.py -v
-
-ERROR collecting tests/test_geo_math_destination.py
-ImportError: cannot import name 'destination_point' from 'app.engine.geo_math'
+```
+cd backend; python -m pytest tests/test_traffic_state.py -v
 ```
 
-Failure reason matches expectation: `destination_point` not yet implemented.
+Output:
 
-### GREEN — Step 3–4: Minimal implementation
+```
+ERROR collecting tests/test_traffic_state.py
+ImportError while importing test module ...
+tests\test_traffic_state.py:3: in <module>
+    from app.engine.traffic_state import (
+E   ModuleNotFoundError: No module named 'app.engine.traffic_state'
+!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+```
 
-Added:
+Result: **FAIL** as expected (module missing).
 
-| File | Change |
+### GREEN — Step 4 (implementation)
+
+Implemented:
+1. `backend/app/engine/traffic_state.py` — `relative_speed`, `congestion_from_relative`, `clamp_speed`
+2. `backend/app/schemas/traffic.py` — all schemas from brief
+3. `backend/app/config.py` — 10 traffic settings fields appended before `# Server`
+
+Re-ran:
+
+```
+cd backend; python -m pytest tests/test_traffic_state.py -v
+```
+
+Output:
+
+```
+tests/test_traffic_state.py::test_relative_speed_and_none PASSED         [ 33%]
+tests/test_traffic_state.py::test_congestion_bands PASSED                [ 66%]
+tests/test_traffic_state.py::test_clamp_speed_band PASSED                [100%]
+
+============================== 3 passed in 0.04s ==============================
+```
+
+Result: **PASS** — all 3 tests green.
+
+## Files Changed
+
+| File | Action |
 |------|--------|
-| `backend/app/engine/geo_math.py` | `destination_point(origin, distance_km, bearing_degrees) -> LatLng` |
-| `backend/app/config.py` | Five nowcast settings with baseline/0.1 defaults |
-| `backend/app/schemas/nowcasting.py` | Request/response and cell prediction schemas |
+| `backend/app/config.py` | Modified — added 10 traffic settings |
+| `backend/app/engine/traffic_state.py` | Created — congestion helpers |
+| `backend/app/schemas/traffic.py` | Created — request/response schemas |
+| `backend/tests/test_traffic_state.py` | Created — unit tests |
 
-```text
-$ cd backend; python -m pytest tests/test_geo_math_destination.py -v
+## Interfaces Delivered
 
-tests/test_geo_math_destination.py::test_destination_point_north_1km PASSED
-tests/test_geo_math_destination.py::test_destination_point_east_and_zero PASSED
-2 passed in 0.21s
-```
+### Settings (`Settings` in `config.py`)
 
-### Full suite (regression)
+- `traffic_model_name: str = "baseline"`
+- `traffic_model_version: str = "0.1"`
+- `traffic_horizons_minutes: list[int] = [5, 10, 15, 30]`
+- `traffic_sample_interval_km: float = 5.0`
+- `traffic_sample_min_points: int = 3`
+- `traffic_sample_max_points: int = 24`
+- `traffic_free_flow_default_kmh: float = 40.0`
+- `traffic_stale_after_seconds: int = 900`
+- `traffic_rain_nearby_km: float = 8.0`
+- `traffic_base_confidence: float = 0.75`
 
-```text
-$ cd backend; python -m pytest -q
-41 passed in 3.76s
-```
+### Helpers (`traffic_state.py`)
 
-## Deliverables Checklist
+- `relative_speed(current, free_flow) -> float | None`
+- `congestion_from_relative(relative) -> CongestionLevel | None`
+- `clamp_speed(speed, free_flow) -> float`
 
-- [x] `destination_point` in `geo_math.py` (verbatim from plan)
-- [x] Settings: `nowcast_model_name=baseline`, `nowcast_model_version=0.1`, `nowcast_horizons_minutes=[5,10,15,30,60]`, `nowcast_intensity_max=255.0`, `nowcast_min_frames_for_full_confidence=3`
-- [x] Schemas: `NowcastPredictRequest`, `NowcastModelInfo`, `PredictedCellMotion`, `PredictedRainCell`, `NowcastPredictionResponse`
-- [x] Tests: `test_geo_math_destination.py` (2 cases)
-- [x] Commit on feature branch
+### Schemas (`traffic.py`)
 
-## Commit
+- `TrafficPredictRequest`
+- `TrafficModelInfo`
+- `TrafficStateOut`
+- `RoadSegmentOut`
+- `SpeedCongestionPair`
+- `WeatherImpactInfo`
+- `TrafficPredictionOut`
+- `TrafficPredictionResponse`
 
-| SHA | Subject |
-|-----|---------|
-| `d9656e5` | feat(nowcast): add geo destination helper and nowcasting schemas |
-
-Commit via `git.exe -F` workaround (per machine constraint).
+Plus type aliases: `TrafficStatus`, `NowcastEmbedStatus`, `CongestionLevel`, `WeatherImpactLevel`, `RoadType`.
 
 ## Self-Review
 
 ### Correctness
 
-- `destination_point` uses standard spherical forward geodesic formulas with `EARTH_RADIUS_M` already defined in module; zero/negative distance returns origin unchanged.
-- North test: haversine back-distance ~1000 m (±15 m tolerance), lat increases, lng unchanged.
-- East test: lng increases; zero distance preserves lat/lng.
-- Config defaults align with planned model identity `baseline/0.1` and horizons `[5,10,15,30,60]`.
-- Schemas reuse existing `LatLng` and `CellBoundsOut`; field constraints match design spec.
+- Congestion bands match brief thresholds (`_FREE=0.85`, `_SLOW=0.70`, `_MODERATE=0.50`, `_HEAVY=0.30`).
+- `clamp_speed` enforces `[0.20, 1.05] * free_flow` when `free_flow > 0`; passthrough with `max(0, speed)` when invalid/missing free flow.
+- `relative_speed` returns `None` for missing inputs or `free_flow <= 0`.
+- Schemas match brief field names, types, and validators exactly.
 
-### Scope
+### Conventions
 
-- Did not modify Stage 1–4 code paths.
-- Did not add API routes, baseline model, or frontend (later tasks).
+- Follows existing patterns: `from __future__ import annotations`, Pydantic `BaseModel` + `Field`, settings grouped with related nowcast fields.
+- `LatLng` imported from `app.schemas.common` as in other schema modules.
 
-### Risks / Notes
+### Scope discipline
 
-- `nowcasting.py` schemas are not yet imported by routers or tests beyond geo tests; validation will be exercised in later tasks.
-- `destination_point` placed before `haversine_distance_m` in file (functional; no behavioral impact).
+- No overbuilding: no provider stubs, engine wiring, API routes, or schema re-exports in `__init__.py`.
+- `RoadType` literal defined but `RoadSegmentOut.road_type` remains `str | None` per brief.
 
-## Concerns
+### Minor notes (non-blocking)
 
-None blocking. Schemas untested directly in this task (per plan — geo helper was the TDD target; schemas are declarative Pydantic models).
+- `RoadType` alias is unused until later tasks wire road classification — intentional per spec.
+- No dedicated schema validation tests; brief only required congestion helper tests.
 
-## Files Touched
+## Status
 
-```
-backend/app/engine/geo_math.py          (+ destination_point)
-backend/app/config.py                   (+ 5 nowcast settings)
-backend/app/schemas/nowcasting.py       (new)
-backend/tests/test_geo_math_destination.py (new)
-```
+**DONE** — TDD cycle complete, tests pass, commit created.

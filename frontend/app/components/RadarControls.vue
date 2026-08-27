@@ -81,6 +81,64 @@
       <input
         type="checkbox"
         class="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500"
+        :checked="trafficEnabled"
+        :disabled="!routeReady"
+        @change="onTrafficToggle"
+      />
+      <span :class="routeReady ? '' : 'text-slate-500'">Giao thông</span>
+    </label>
+    <p v-if="!routeReady" class="text-[10px] text-slate-500">Cần có lộ trình để hiển thị giao thông.</p>
+
+    <label class="flex cursor-pointer items-center gap-2">
+      <input
+        type="checkbox"
+        class="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500"
+        :checked="trafficPredictionEnabled"
+        :disabled="!routeReady"
+        @change="onTrafficPredictionToggle"
+      />
+      <span :class="routeReady ? '' : 'text-slate-500'">Dự báo giao thông</span>
+    </label>
+    <p v-if="!routeReady" class="text-[10px] text-slate-500">Cần có lộ trình để dự báo giao thông.</p>
+
+    <div v-if="(trafficEnabled || trafficPredictionEnabled) && routeReady" class="space-y-1 text-xs">
+      <div v-if="trafficLoading" class="text-slate-400">
+        {{ trafficPredictionEnabled ? "Đang dự báo giao thông…" : "Đang tải giao thông…" }}
+      </div>
+      <div v-else-if="trafficError" class="text-amber-400">{{ trafficError }}</div>
+      <div v-else-if="trafficSegmentCount !== null" class="text-slate-300">
+        {{ trafficSegmentCount }} đoạn đường đang theo dõi
+      </div>
+    </div>
+
+    <div v-if="trafficPredictionEnabled && routeReady" class="space-y-2">
+      <div class="flex flex-wrap gap-1">
+        <button
+          v-for="option in trafficHorizonOptions"
+          :key="option.value"
+          type="button"
+          class="rounded border px-2 py-0.5 text-[11px] font-medium"
+          :class="
+            trafficSelectedHorizon === option.value
+              ? 'border-blue-500 bg-blue-500/20 text-blue-400'
+              : 'border-slate-600 text-slate-400 hover:border-slate-500 hover:text-slate-200'
+          "
+          @click="$emit('update:trafficSelectedHorizon', option.value)"
+        >
+          {{ option.label }}
+        </button>
+      </div>
+
+      <p class="text-[10px] text-slate-500">
+        Dự báo baseline v0.1 — giao thông synthetic (không phải live)
+        <span v-if="trafficModelLabel"> · {{ trafficModelLabel }}</span>
+      </p>
+    </div>
+
+    <label class="flex cursor-pointer items-center gap-2">
+      <input
+        type="checkbox"
+        class="h-4 w-4 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500"
         :checked="enabled"
         @change="onToggle"
       />
@@ -170,6 +228,7 @@
 <script setup lang="ts">
 import type { NowcastSelectedHorizon } from "~/types/nowcasting"
 import type { RadarFrameResponse, RadarLegend } from "~/types/radar"
+import type { TrafficSelectedHorizon } from "~/types/traffic"
 
 const props = defineProps<{
   enabled: boolean
@@ -198,6 +257,13 @@ const props = defineProps<{
   nowcastingModelLabel: string | null
   selectedHorizon: NowcastSelectedHorizon
   nowcastPredictionCount: number | null
+  trafficEnabled: boolean
+  trafficPredictionEnabled: boolean
+  trafficLoading: boolean
+  trafficError: string | null
+  trafficModelLabel: string | null
+  trafficSelectedHorizon: TrafficSelectedHorizon
+  trafficSegmentCount: number | null
 }>()
 
 const emit = defineEmits<{
@@ -208,6 +274,9 @@ const emit = defineEmits<{
   "update:satelliteOpacity": [value: number]
   "update:nowcastingEnabled": [value: boolean]
   "update:selectedHorizon": [value: NowcastSelectedHorizon]
+  "update:trafficEnabled": [value: boolean]
+  "update:trafficPredictionEnabled": [value: boolean]
+  "update:trafficSelectedHorizon": [value: TrafficSelectedHorizon]
   refresh: []
 }>()
 
@@ -218,6 +287,14 @@ const horizonOptions: { value: NowcastSelectedHorizon; label: string }[] = [
   { value: 15, label: "+15m" },
   { value: 30, label: "+30m" },
   { value: 60, label: "+60m" },
+]
+
+const trafficHorizonOptions: { value: TrafficSelectedHorizon; label: string }[] = [
+  { value: 0, label: "NOW" },
+  { value: 5, label: "+5m" },
+  { value: 10, label: "+10m" },
+  { value: 15, label: "+15m" },
+  { value: 30, label: "+30m" },
 ]
 
 const legend = computed<RadarLegend | null>(() => props.frame?.legend ?? null)
@@ -248,6 +325,14 @@ function onRainCellsToggle(event: Event) {
 
 function onNowcastingToggle(event: Event) {
   emit("update:nowcastingEnabled", (event.target as HTMLInputElement).checked)
+}
+
+function onTrafficToggle(event: Event) {
+  emit("update:trafficEnabled", (event.target as HTMLInputElement).checked)
+}
+
+function onTrafficPredictionToggle(event: Event) {
+  emit("update:trafficPredictionEnabled", (event.target as HTMLInputElement).checked)
 }
 
 function onSatelliteToggle(event: Event) {
