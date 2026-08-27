@@ -1,18 +1,36 @@
-﻿### Task 6: RadarControls â€” toggle + timeline
+﻿### Task 6: TrafficService + API
 
 **Files:**
-- Modify: `frontend/app/components/RadarControls.vue`
+- Create: `backend/app/services/traffic_service.py`
+- Create: `backend/app/api/traffic.py`
+- Modify: `backend/app/main.py`
+- Create: `backend/tests/test_traffic_api.py`
 
 **Interfaces:**
-- New props: `nowcastingEnabled`, `nowcastingLoading`, `nowcastingError`, `nowcastingModelLabel`, `selectedHorizon`, `nowcastPredictionCount`, `routeReady` (already exists)
-- Emits: `update:nowcastingEnabled`, `update:selectedHorizon`
-- When `nowcastingEnabled && routeReady`, show timeline buttons: `NOW`, `+5m`, `+10m`, `+15m`, `+30m`, `+60m`
-- Show small note: `Dá»± bÃ¡o baseline â€” khÃ´ng pháº£i radar quan sÃ¡t` + model label
+- `TrafficService.predict_for_route(geometry, buffer_km=None)`:
+  1. `segments = SyntheticTrafficProvider().current_for_route(geometry)`
+  2. Try `await get_nowcasting_service().predict_for_route(geometry, buffer_km=buffer_km)`. On exception: treat as nowcast unavailable (`NowcastPredictionResponse` with status unavailable, empty predictions) â€” **do not** fail the whole traffic request.
+  3. Return `run_traffic_prediction(segments, nowcast=..., at=now)`
+- Router: `POST /api/traffic/prediction` like nowcasting
+- `main.py`: isolated `try/except` include (copy nowcasting pattern, log `"Traffic router failed to load"`)
 
-- [ ] **Step 1: Extend props/emits/template** following existing rain-cells toggle markup (checkbox + status lines). Horizon buttons: highlight selected with existing accent classes.
+- [ ] **Step 1: Write API test with mocked traffic service** (same pattern as `test_nowcasting_predict_endpoint_with_mock_service` swapping module `_traffic_service`)
 
-- [ ] **Step 2: Commit**
+Also add a service-level test (can live in same file) that mocks `get_nowcasting_service` to raise / return unavailable and asserts traffic status still ok with empty weather impact.
 
-Message: `feat(nowcast): add nowcasting toggle and horizon timeline UI`
+- [ ] **Step 2: Run â€” expect fail**
+
+- [ ] **Step 3: Implement service, API, register router**
+
+`get_traffic_service()` singleton like nowcasting.
+
+- [ ] **Step 4: Tests pass**
+
+Run: `cd backend; python -m pytest tests/test_traffic_api.py tests/test_traffic_engine.py tests/test_nowcasting_api.py -v`
+
+- [ ] **Step 5: Commit**
+
+Message: `feat(traffic): expose POST /api/traffic/prediction`
 
 ---
+

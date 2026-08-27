@@ -1,1 +1,1 @@
-feat(nowcast): add nowcasting toggle and horizon timeline UI
+feat(traffic): expose POST /api/traffic/prediction

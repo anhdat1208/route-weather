@@ -1,103 +1,105 @@
-# Task 4 Report: Service + API + main registration
+# Task 4 Report: WeatherImpactModel
 
-**Branch:** `feat/stage5-ai-nowcasting`  
-**Date:** 2026-08-25  
-**Status:** DONE
+**Branch:** `feat/stage6-traffic-prediction`  
+**Commit:** `3c4d1ed` — `feat(traffic): add rule-based weather impact model`  
+**Date:** 2026-08-25
 
-## Summary
+## Scope
 
-Exposed Stage 5 nowcasting over HTTP: `NowcastingService.predict_for_route` awaits Stage 3 `RainCellService.track_for_route` then `run_nowcast(track)`. Router `POST /api/nowcasting/predict` is registered in `main.py` inside an isolated try/except so a nowcast import failure cannot take down radar/route APIs. No frontend (out of scope).
+Implemented Task 4 only per brief:
+- `backend/app/engine/weather_impact.py` — `estimate_impact(segment, *, horizon, nowcast) -> WeatherImpactInfo`
+- Locked algorithm: intensity bands (<40 / <90 / else), deltas (−7% / −15% / −25%), rain_probability × confidence scaling, heavy/severe dampening (×0.5), reason codes
+- Tests in `backend/tests/test_weather_impact.py` (14 cases)
+
+No traffic_engine combine, API, or frontend were added.
 
 ## TDD Evidence
 
-### RED — Step 1–2: Failing tests first
+### RED — Step 2 (failing tests first)
 
-Created `backend/tests/test_nowcasting_api.py` (HTTP mock + service wiring). Production service/API did not exist yet.
+Created `backend/tests/test_weather_impact.py`, then ran:
 
-```text
-$ cd backend; python -m pytest tests/test_nowcasting_api.py -v
-
-ERROR collecting tests/test_nowcasting_api.py
-ImportError while importing test module '.../tests/test_nowcasting_api.py'.
-tests\test_nowcasting_api.py:18: in <module>
-    from app.services.nowcasting_service import NowcastingService
-E   ModuleNotFoundError: No module named 'app.services.nowcasting_service'
-============================== 1 error in 0.86s ===============================
+```
+cd backend; python -m pytest tests/test_weather_impact.py -v
 ```
 
-Failure reason matches expectation: `nowcasting_service` not yet implemented.
+Output:
 
-### GREEN — Step 3–4: Minimal implementation
-
-Added:
-
-- `backend/app/services/nowcasting_service.py` — `NowcastingService.predict_for_route` + `get_nowcasting_service()` singleton
-- `backend/app/api/nowcasting.py` — `POST /api/nowcasting/predict`
-- `backend/app/main.py` — isolated nowcasting router include after rain-cells
-
-```text
-$ cd backend; python -m pytest tests/test_nowcasting_baseline.py tests/test_nowcasting_engine.py tests/test_nowcasting_api.py -v
-
-tests/test_nowcasting_baseline.py ... 11 passed
-tests/test_nowcasting_engine.py ... 6 passed
-tests/test_nowcasting_api.py::test_nowcasting_predict_endpoint_with_mock_service PASSED
-tests/test_nowcasting_api.py::test_predict_for_route_calls_track_then_engine PASSED
-============================= 19 passed in 1.28s ==============================
+```
+ModuleNotFoundError: No module named 'app.engine.weather_impact'
 ```
 
-### Full suite (regression)
+Result: **FAIL** as expected (module missing).
 
-```text
-$ cd backend; python -m pytest -q
-60 passed in 5.23s
+### GREEN — Step 4 (implementation)
+
+Implemented `estimate_impact` consuming `RoadSegmentOut`, `NowcastPredictionResponse`, `min_distance_to_polyline_m`, `settings.traffic_rain_nearby_km`.
+
+Re-ran:
+
+```
+cd backend; python -m pytest tests/test_weather_impact.py tests/test_traffic_state.py tests/test_traffic_synthetic.py tests/test_traffic_baseline.py -v
 ```
 
-(58 existing + 2 new.)
+Output:
 
-## Deliverables Checklist
+```
+22 passed in 0.35s
+```
 
-- [x] `NowcastingService.predict_for_route(geometry, buffer_km=None) -> NowcastPredictionResponse`
-- [x] Internally: `track = await get_rain_cell_service().track_for_route(...)` then `return run_nowcast(track)`
-- [x] `get_nowcasting_service()` singleton like rain cells
-- [x] `POST /api/nowcasting/predict` with `response_model=NowcastPredictionResponse`
-- [x] Isolated try/except registration in `main.py` (after rain-cells)
-- [x] Tests: `test_nowcasting_api.py` (mocked HTTP + track-then-engine unit)
-- [x] Did not add frontend
-- [x] Commit on feature branch
+Result: **PASS** — 14 new + 8 existing traffic tests green.
 
-## Commit
+## Files Changed
 
-| SHA | Subject |
-|-----|---------|
-| `0f4bf31` | feat(nowcast): expose POST /api/nowcasting/predict |
+| File | Action |
+|------|--------|
+| `backend/app/engine/weather_impact.py` | Created — rule-based weather impact |
+| `backend/tests/test_weather_impact.py` | Created — 14 unit tests |
 
-Commit via `git.exe -F` workaround (per machine constraint).
+## Interfaces Delivered
+
+```python
+def estimate_impact(
+    segment: RoadSegmentOut,
+    *,
+    horizon: int,
+    nowcast: NowcastPredictionResponse | None,
+) -> WeatherImpactInfo: ...
+```
+
+Early exits: `nowcast is None` → `no_rain_prediction`; `status == unavailable` → `nowcast_unavailable`; empty predictions → `no_rain_prediction`; no nearby cells → `no_rain_nearby`.
+
+## Test Coverage
+
+| Scenario | Asserted |
+|----------|----------|
+| No rain nearby | delta 0, `no_rain_nearby` |
+| Empty predictions | `no_rain_prediction` |
+| Unavailable nowcast | `nowcast_unavailable` |
+| None nowcast | `no_rain_prediction` |
+| Light / moderate / heavy bands | level + delta + reason |
+| None intensity | treated as low (−7%) |
+| Already congested (heavy/severe) | delta × 0.5 + reason |
+| Low confidence (<0.4) | scaled delta + reason |
+| Rain probability scaling | delta × probability |
+| Max intensity pick | highest cell wins |
+| Horizon filter | wrong horizon → no nearby |
 
 ## Self-Review
 
 ### Correctness
 
-- HTTP test patches `_nowcasting_service` and asserts 200, `model.name == "baseline"`, horizons `[5,10,15,30,60]`, `predictions[0].kind == "predicted"`.
-- Service unit test mocks `get_rain_cell_service`; real `run_nowcast` on empty ok track → `status="ok"`, empty predictions, Vietnamese empty message, `frames_used=3`.
-- `buffer_km` is forwarded as a keyword to `track_for_route`.
-- Nowcasting include is a sibling try/except of rain-cells: failure logs and does not unwind the outer boot block.
+- Distance check uses `traffic_rain_nearby_km * 1000` meters via `min_distance_to_polyline_m`.
+- None intensity → low band per spec (not skipped).
+- Reasons order: dampening/low-confidence codes before rain-level reason.
 
 ### Scope
 
-- Did not modify Stage 1–4 engines/trackers.
-- Did not add frontend types, composable, or map layers.
+- Did not implement `traffic_engine` combine, confidence, or API.
+- Did not modify schemas (Task 1 already delivered `WeatherImpactInfo`).
 
 ### Concerns (non-blocking)
 
-- HTTP test does not assert the mock was called with `geometry` / `buffer_km` (same pattern as rain-cells API test).
-- No dedicated HTTP test for request validation (`geometry` min_length=2) or `unavailable` passthrough via the live service.
-- `radar_age_seconds` remains `None` (Stage 5 engine default); service does not derive radar age.
-
-## Files
-
-| Path | Action |
-|------|--------|
-| `backend/app/services/nowcasting_service.py` | created |
-| `backend/app/api/nowcasting.py` | created |
-| `backend/app/main.py` | modified |
-| `backend/tests/test_nowcasting_api.py` | created |
+- Segment geometry with `<2` points silently yields no nearby cells (no explicit error).
+- No test for `nowcast.status == "partial"` with valid predictions (should work same as ok).
+- Polyline distance uses sampled segments (same as fusion engine); edge precision not calibrated.

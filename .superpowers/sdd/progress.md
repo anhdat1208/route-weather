@@ -1,25 +1,29 @@
-﻿# SDD Progress Ledger - stage5-ai-nowcasting
-Branch: feat/stage5-ai-nowcasting
+﻿# SDD Progress Ledger - stage6-traffic-prediction
+Branch: feat/stage6-traffic-prediction
 Workspace: D:\projects-vibecoding\route-weather (in-place)
 Started: 2026-08-25
-Merge-base main: a5a9a91
+Merge-base main: 9ee0e8e
+Plan: docs/superpowers/plans/2026-08-25-stage6-traffic-prediction.md
 
-Task 1: complete (commits f6e16fa..d9656e5, review clean)
+Task 1: complete (33cf9c7..cb5881a)
+Task 2: complete (cb5881a..02dfab8)
+Task 3: complete (02dfab8..bf9df6c)
+Task 4: complete (bf9df6c..3c4d1ed)
+Task 5: complete (3c4d1ed..1f4703e)
+Task 6: complete (1f4703e..cafbe3f)
+Task 7: complete (cafbe3f..f9e3b71)
+Task 8: complete (f9e3b71..32cf096)
+Task 9: complete (32cf096..5fcb575, z-order fix included)
+Task 10: complete (5fcb575..ad0eff8)
+Final review: Needs fixes → fixed (030c743 NOW mode, 9467108 README, nowcast logging)
+All tasks complete. Branch kept as-is per user.
 
-Task 2: complete (commits d9656e5..31a32a8, review clean; minors: frames_used x0.7 untested, intensity sample count includes current)
-
-Task 3: complete (commits 31a32a8..0ec15b3, review clean; minors: protocol name/version duck typing)
-
-Task 4: complete (commits 0ec15b3..0f4bf31, review clean)
-
-Task 5: complete (commits 0f4bf31..270b8d9, review clean)
-
-Task 6: complete (commits 270b8d9..7c3d646, review clean)
-
-Task 7: complete (commits 7c3d646..ea673cc, review clean; minor: nowcastClickBound remount)
-
-Task 8: complete (commits ea673cc..795d72d, review clean; minor: count at NOW)
-
-
-Final review: Ready to merge (no Critical/Important). Minors deferred.
-All tasks complete.
+Minors deferred (post-merge OK):
+- CongestionLevel Literal duplication; RoadType unused
+- Thin tests (boundaries, synthetic fields, baseline, weather edges, confidence branches)
+- tod_factor timezone / missing_current not surfaced
+- Engine status priority partial vs nowcast-unavailable
+- API silent nowcast except; unavailable return path untested at service
+- FE partial message not surfaced; double-fetch on toggle
+- README early scope bullets still say traffic prediction not done
+- Browser smoke test not run in SDD session

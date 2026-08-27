@@ -1,33 +1,23 @@
-﻿### Task 8: Wire `index.vue` + README
+﻿### Task 8: RadarControls â€” traffic toggles + traffic timeline
 
 **Files:**
-- Modify: `frontend/app/pages/index.vue`
-- Modify: `README.md`
+- Modify: `frontend/app/components/RadarControls.vue`
 
-**Wiring:**
-- Import `useNowcasting`
-- On analyze success / geometry available: if nowcasting enabled, `fetchNowcast(geometry)` (same geometry as rain cells)
-- Pass props to `RadarControls` and `RouteMap`
-- `onRefreshLayers` also refreshes nowcast when enabled
-- README: Stage 5 section describing baseline architecture diagram (short), how to call API, how to toggle UI; mark roadmap `[x] Stage 5` only after feature works â€” during this task set to `[x]` and note baseline limitations
+**Interfaces:**
+- New props: `trafficEnabled`, `trafficPredictionEnabled`, `trafficLoading`, `trafficError`, `trafficModelLabel`, `trafficSelectedHorizon`, `trafficSegmentCount`
+- Emits: `update:trafficEnabled`, `update:trafficPredictionEnabled`, `update:trafficSelectedHorizon`
+- Copy: **Giao thÃ´ng**, **Dá»± bÃ¡o giao thÃ´ng**
+- Timeline only when `trafficPredictionEnabled && routeReady`: `NOW +5m +10m +15m +30m` (no +60m)
+- Disclaimer: `Dá»± bÃ¡o baseline v0.1 â€” giao thÃ´ng synthetic (khÃ´ng pháº£i live)`
+- Do **not** reuse nowcast `selectedHorizon` / nowcast timeline buttons
 
-- [ ] **Step 1: Wire page**
+Place the two checkboxes after nowcasting block, before radar/satellite (keep weather-layer grouping readable).
 
-- [ ] **Step 2: Update README Stage 5**
+- [ ] **Step 1: Extend template + props/emits**
 
-Include:
-- Architecture one-liner matching spec
-- `POST /api/nowcasting/predict`
-- Baseline â‰  trained ML
-- How to test locally (backend pytest + UI toggle)
+- [ ] **Step 2: Commit**
 
-- [ ] **Step 3: Run full backend nowcast-related tests**
-
-Run: `cd backend; python -m pytest tests/test_geo_math_destination.py tests/test_nowcasting_baseline.py tests/test_nowcasting_engine.py tests/test_nowcasting_api.py tests/test_rain_cells.py tests/test_fusion_engine.py -v`  
-Expected: all PASS (Stage 3/4 unbroken)
-
-- [ ] **Step 4: Commit**
-
-Message: `feat(nowcast): wire Stage 5 UI and document baseline nowcasting`
+Message: `feat(traffic): add traffic toggles and prediction horizon UI`
 
 ---
+

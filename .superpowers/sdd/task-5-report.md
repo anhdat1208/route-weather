@@ -1,64 +1,89 @@
-# Task 5 Report: Frontend types + useNowcasting
+# Task 5 Report: TrafficPredictionEngine
 
-**Branch:** `feat/stage5-ai-nowcasting`  
-**Date:** 2026-08-25  
-**Status:** DONE
+**Branch:** `feat/stage6-traffic-prediction`  
+**Commit:** `1f4703e` — `feat(traffic): add traffic prediction engine`  
+**Date:** 2026-08-25
 
-## Summary
+## Scope
 
-Added client types mirroring `NowcastPredictionResponse` / `PredictedRainCell`, composable `useNowcasting` (POST `/api/nowcasting/predict`, horizon `0|5|10|15|30|60`, 300s refresh), and GeoJSON/intensity helpers. Did not modify RadarControls, RouteMap, or `index.vue`.
+Implemented Task 5 per plan (`docs/superpowers/plans/2026-08-25-stage6-traffic-prediction.md`):
+- `backend/app/engine/traffic_engine.py` — `run_traffic_prediction(segments, *, nowcast, at) -> TrafficPredictionResponse`
+- Locked combine: `clamp(base × (1 + impact_delta), free_flow)`; weather_adjusted delta from current
+- Locked confidence: base 0.75, ×0.7 stale, ×0.5 missing current, horizon decay, ×0.75 bad nowcast + non-none impact, ×0.85 low_nowcast_confidence, ×0.9 no_history
+- Status table with Vietnamese messages
+- Tests in `backend/tests/test_traffic_engine.py` (7 cases)
+
+No TrafficService, API, or frontend (Task 6).
 
 ## TDD Evidence
 
-No Jest in the frontend repo (plan/brief: verify by TypeScript). `npx nuxi typecheck` cannot run (`vue-tsc` not installed). App TypeScript check:
+### RED — Step 2
 
-```text
-$ cd frontend; npx tsc -p .nuxt/tsconfig.app.json --noEmit --pretty false
-(exit 0, no diagnostics)
+```
+cd backend; python -m pytest tests/test_traffic_engine.py -v
 ```
 
-`npx nuxi prepare` succeeded with no duplicated-import warning after dropping a `bearingToCompass` re-export from `nowcast.ts`.
+```
+ModuleNotFoundError: No module named 'app.engine.traffic_engine'
+```
 
-## Deliverables Checklist
+### GREEN — Step 4
 
-- [x] `frontend/app/types/nowcasting.ts` — request/response, `NowcastSelectedHorizon` (`0` = NOW)
-- [x] `frontend/app/composables/useNowcasting.ts` — `enabled`, `selectedHorizon` (`useState("nowcast-horizon")`), `loading`, `errorMessage`, `response`, `predictionsForHorizon`, `setEnabled`, `setHorizon`, `fetchNowcast`, 300s refresh
-- [x] `predictionsForHorizon`: empty when NOW; else filter `forecast_minutes === selectedHorizon`
-- [x] `frontend/app/utils/nowcast.ts` — `nowcastGeoJson`, `intensityLabel` (Không rõ / nhẹ / vừa / mạnh), reuses `bearingToCompass`
-- [x] Did not modify RadarControls, RouteMap, or index.vue
-- [x] Commit on feature branch
+```
+cd backend; python -m pytest tests/test_traffic_engine.py tests/test_weather_impact.py tests/test_traffic_baseline.py -v
+```
 
-## Commit
+```
+23 passed in 0.44s
+```
 
-| SHA | Subject |
-|-----|---------|
-| `270b8d9` | feat(nowcast): add frontend types and useNowcasting composable |
+## Files Changed
 
-Commit via `git.exe -F` workaround (per machine constraint).
+| File | Action |
+|------|--------|
+| `backend/app/engine/traffic_engine.py` | Created — combine, confidence, status |
+| `backend/tests/test_traffic_engine.py` | Created — 7 unit tests |
+
+## Interfaces Delivered
+
+```python
+def run_traffic_prediction(
+    segments: Sequence[RoadSegmentOut],
+    *,
+    nowcast: NowcastPredictionResponse | None,
+    at: datetime,
+) -> TrafficPredictionResponse: ...
+```
+
+Uses `BaselineTrafficModel().predict_base`, `estimate_impact`, `settings.traffic_horizons_minutes`, model info from settings.
+
+## Test Coverage
+
+| Scenario | Asserted |
+|----------|----------|
+| Combine 28 + (−20%) | adjusted 22.4 |
+| Confidence horizon | 30m < 5m |
+| Stale traffic | lowers confidence |
+| Empty segments | unavailable, skipped, Vietnamese message |
+| Nowcast unavailable | ok, base predictions, impact 0, message |
+| Heavy rain | adjusted < base |
+| Missing current speed | partial status, adj delta None |
 
 ## Self-Review
 
 ### Correctness
 
-- Types align with backend schemas (`kind: "predicted"`, motion, bounds, confidence, `radar_age_seconds`).
-- Fetch/error/refresh copy `useRainCells` (`unavailable` does not schedule refresh; `partial`/`ok` refresh every 300s).
-- Horizon is client-side filter; one API payload covers all forecast minutes.
-- Intensity: `null` → `Không rõ`; `<40` nhẹ; `<90` vừa; else mạnh.
+- Combine and confidence formulas match locked spec exactly.
+- Nowcast unavailable still emits base predictions with zero weather impact.
+- Status priority: unavailable → partial (missing current) → nowcast-unavailable message → ok.
 
 ### Scope
 
-- Three new frontend files only. Stage 1–4 UI untouched.
+- Did not implement TrafficService, API router, or frontend.
+- Did not modify schemas or prior modules.
 
 ### Concerns (non-blocking)
 
-- No unit tests (repo has no frontend Jest). Behavior of `predictionsForHorizon` / `intensityLabel` is not executed until Task 6–8 wire UI.
-- `nuxi typecheck` needs `vue-tsc`; used `tsc -p .nuxt/tsconfig.app.json` instead.
-- Same composable-instance caveat as rain cells: timer/`lastGeometry` are per `useNowcasting()` call (page should use once).
-
-## Files
-
-| Path | Action |
-|------|--------|
-| `frontend/app/types/nowcasting.ts` | created |
-| `frontend/app/composables/useNowcasting.ts` | created |
-| `frontend/app/utils/nowcast.ts` | created |
+- `missing_current` surfaced at response level but baseline still substitutes free-flow (documented in Task 3 minors).
+- No test for nowcast `partial` status with non-none impact (confidence ×0.75 path untested directly).
+- Combined status when both partial + nowcast unavailable: partial wins (message for missing current only).
