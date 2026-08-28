@@ -909,13 +909,26 @@ watch(
   { deep: true },
 )
 
+let resizeObserver: ResizeObserver | null = null
+
+function bindMapResize() {
+  if (!mapEl.value || resizeObserver) return
+  resizeObserver = new ResizeObserver(() => {
+    map.value?.resize()
+  })
+  resizeObserver.observe(mapEl.value)
+}
+
 onMounted(async () => {
   await ensureMap()
+  bindMapResize()
   if (map.value?.isStyleLoaded()) renderAll()
   else map.value?.once("load", renderAll)
 })
 
 onBeforeUnmount(() => {
+  resizeObserver?.disconnect()
+  resizeObserver = null
   startMarker?.remove()
   endMarker?.remove()
   rainCellPopup?.remove()
