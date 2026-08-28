@@ -1,6 +1,9 @@
 <template>
-  <div class="flex h-screen overflow-hidden flex-col md:flex-row">
-    <aside class="flex w-full shrink-0 flex-col gap-4 overflow-y-auto border-r border-slate-700/50 p-4 md:w-80">
+  <div class="flex h-[100dvh] flex-col overflow-hidden md:flex-row">
+    <!-- Mobile: map on top. Desktop: sidebar left via order. -->
+    <aside
+      class="order-2 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto border-slate-700/50 p-4 md:order-1 md:w-80 md:shrink-0 md:flex-none md:border-r"
+    >
       <div class="mb-2">
         <h1 class="text-xl font-bold">Route Weather</h1>
         <p class="mt-1 text-xs text-slate-400">Biết thời tiết trên từng chặng đường</p>
@@ -97,13 +100,21 @@
         @refresh="refreshFusionDebug"
       />
 
-      <p class="text-xs" :class="healthOk ? 'text-green-400' : 'text-red-400'">
+      <WeatherTimeline class="md:hidden" :points="routeWeather?.timeline ?? []" />
+      <RouteIntelligenceTimeline
+        class="md:hidden"
+        :segments="intelligence?.segments ?? []"
+        :selected-id="selectedSegmentId"
+        @select="selectIntelligenceSegment"
+      />
+
+      <p class="pb-safe text-xs" :class="healthOk ? 'text-green-400' : 'text-red-400'">
         API {{ healthOk ? "online" : "offline" }}
       </p>
     </aside>
 
-    <main class="flex flex-1 flex-col overflow-hidden">
-      <div class="relative min-h-[50vh] flex-1">
+    <main class="order-1 flex h-[42dvh] shrink-0 flex-col overflow-hidden border-b border-slate-700/50 md:order-2 md:h-auto md:min-h-0 md:flex-1 md:border-b-0">
+      <div class="relative min-h-0 flex-1">
         <ClientOnly>
           <RouteMap
             :route-weather="routeWeather"
@@ -133,12 +144,14 @@
           />
         </ClientOnly>
       </div>
-      <WeatherTimeline :points="routeWeather?.timeline ?? []" />
-      <RouteIntelligenceTimeline
-        :segments="intelligence?.segments ?? []"
-        :selected-id="selectedSegmentId"
-        @select="selectIntelligenceSegment"
-      />
+      <div class="hidden shrink-0 md:block">
+        <WeatherTimeline :points="routeWeather?.timeline ?? []" />
+        <RouteIntelligenceTimeline
+          :segments="intelligence?.segments ?? []"
+          :selected-id="selectedSegmentId"
+          @select="selectIntelligenceSegment"
+        />
+      </div>
     </main>
   </div>
 </template>
