@@ -5,12 +5,14 @@
 <script setup lang="ts">
 import type maplibregl from "maplibre-gl"
 import type { RouteWeatherResponse } from "~/types/routeWeather"
+import type { RouteIntelligenceSegment } from "~/types/routeIntelligence"
 import type { TrackedRainCell } from "~/types/rainCell"
 import type { NowcastModelInfo, PredictedRainCell } from "~/types/nowcasting"
 import type { RoadSegment, TrafficModelInfo, TrafficPrediction, TrafficSelectedHorizon } from "~/types/traffic"
 import { bearingToCompass } from "~/utils/rainCell"
 import { formatNowcastPopup, nowcastGeoJson } from "~/utils/nowcast"
 import { formatTrafficPopup, trafficLineGeoJson } from "~/utils/traffic"
+import { formatIntelligencePopup, intelligenceSegmentGeoJson } from "~/utils/routeIntelligence"
 
 const props = defineProps<{
   routeWeather: RouteWeatherResponse | null
@@ -34,7 +36,11 @@ const props = defineProps<{
   trafficSegments?: RoadSegment[]
   trafficPredictionsForHorizon?: TrafficPrediction[]
   trafficModel?: TrafficModelInfo | null
+  intelligenceSegments?: RouteIntelligenceSegment[]
+  selectedIntelligenceSegmentId?: string | null
 }>()
+
+const emit = defineEmits<{ "select-intelligence-segment": [id: string] }>()
 
 const config = useRuntimeConfig()
 const mapEl = ref<HTMLElement | null>(null)
@@ -67,12 +73,17 @@ const NOWCAST_POINT_LABEL_LAYER = "nowcast-points-label"
 const NOWCAST_TEAL = "#2dd4bf"
 const TRAFFIC_LINE_SOURCE = "traffic-line"
 const TRAFFIC_LINE_LAYER = "traffic-line-layer"
+const INTEL_RISK_SOURCE = "intel-risk-segments"
+const INTEL_RISK_LAYER = "intel-risk-segments-layer"
+const INTEL_RISK_GLOW_LAYER = "intel-risk-segments-glow"
 
 let rainCellPopup: maplibregl.Popup | null = null
 let nowcastPopup: maplibregl.Popup | null = null
 let nowcastClickBound = false
 let trafficPopup: maplibregl.Popup | null = null
 let trafficClickBound = false
+let intelPopup: maplibregl.Popup | null = null
+let intelClickBound = false
 
 async function ensureMap() {
   if (!process.client || map.value || !mapEl.value) return
@@ -644,6 +655,77 @@ function syncTrafficLayer() {
   }
 }
 
+function syncIntelligenceLayer() {
+  if (!map.value || !maplibreModule) return
+  const m = map.value
+  const segments = props.intelligenceSegments ?? []
+
+  removeLayerSource(m, INTEL_RISK_LAYER, INTEL_RISK_SOURCE)
+  if (m.getLayer(INTEL_RISK_GLOW_LAYER)) m.removeLayer(INTEL_RISK_GLOW_LAYER)
+
+  if (!segments.length) {
+    intelPopup?.remove()
+    return
+  }
+
+  const geojson = intelligenceSegmentGeoJson(segments, props.selectedIntelligenceSegmentId ?? null)
+  const beforeId = m.getLayer(ROUTE_LAYER) ? ROUTE_LAYER : firstSymbolLayerId(m)
+
+  m.addSource(INTEL_RISK_SOURCE, { type: "geojson", data: geojson })
+
+  m.addLayer(
+    {
+      id: INTEL_RISK_GLOW_LAYER,
+      source: INTEL_RISK_SOURCE,
+      type: "line",
+      paint: {
+        "line-color": ["get", "color"],
+        "line-width": ["case", ["get", "selected"], 12, 8],
+        "line-opacity": 0.35,
+        "line-blur": 2,
+      },
+    },
+    beforeId,
+  )
+
+  m.addLayer(
+    {
+      id: INTEL_RISK_LAYER,
+      source: INTEL_RISK_SOURCE,
+      type: "line",
+      paint: {
+        "line-color": ["get", "color"],
+        "line-width": ["case", ["get", "selected"], 7, 5],
+        "line-opacity": 0.9,
+      },
+    },
+    beforeId,
+  )
+
+  if (!intelClickBound) {
+    intelClickBound = true
+    m.on("click", INTEL_RISK_LAYER, (e) => {
+      const feat = e.features?.[0]
+      const id = feat?.properties?.id
+      if (typeof id !== "string") return
+      emit("select-intelligence-segment", id)
+      const seg = segments.find((s) => s.id === id)
+      if (!seg) return
+      intelPopup?.remove()
+      intelPopup = new maplibreModule!.Popup({ closeButton: true, className: "intel-popup" })
+        .setLngLat(e.lngLat)
+        .setHTML(formatIntelligencePopup(seg))
+        .addTo(m)
+    })
+    m.on("mouseenter", INTEL_RISK_LAYER, () => {
+      m.getCanvas().style.cursor = "pointer"
+    })
+    m.on("mouseleave", INTEL_RISK_LAYER, () => {
+      m.getCanvas().style.cursor = ""
+    })
+  }
+}
+
 function renderRouteLayers() {
   if (!map.value || !maplibreModule || !props.routeWeather) return
   const m = map.value
@@ -728,6 +810,7 @@ function renderRouteLayers() {
   )
   m.fitBounds(bounds, { padding: 40 })
   syncTrafficLayer()
+  syncIntelligenceLayer()
 }
 
 function renderAll() {
@@ -736,7 +819,10 @@ function renderAll() {
   syncRainCellLayers()
   syncNowcastLayers()
   if (props.routeWeather) renderRouteLayers()
-  else syncTrafficLayer()
+  else {
+    syncTrafficLayer()
+    syncIntelligenceLayer()
+  }
 }
 
 watch(
@@ -803,6 +889,16 @@ watch(
 )
 
 watch(
+  () => [props.intelligenceSegments, props.selectedIntelligenceSegmentId] as const,
+  () => {
+    if (!map.value) return
+    if (map.value.isStyleLoaded()) syncIntelligenceLayer()
+    else map.value.once("load", renderAll)
+  },
+  { deep: true },
+)
+
+watch(
   () => props.routeWeather,
   async () => {
     await ensureMap()
@@ -825,8 +921,10 @@ onBeforeUnmount(() => {
   rainCellPopup?.remove()
   nowcastPopup?.remove()
   trafficPopup?.remove()
+  intelPopup?.remove()
   nowcastClickBound = false
   trafficClickBound = false
+  intelClickBound = false
   map.value?.remove()
   map.value = null
 })

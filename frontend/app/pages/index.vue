@@ -13,14 +13,14 @@
         v-model:departure-local="departureLocal"
         :origin-suggestions="originSuggestions"
         :destination-suggestions="destinationSuggestions"
-        :loading="loading"
+        :loading="loading || intelligenceLoading"
         :loading-message="loadingMessage"
         :error-message="errorMessage"
         :weather-warning="weatherWarning"
         :can-submit="!!originSelected && !!destinationSelected"
         @select-origin="selectOrigin"
         @select-destination="selectDestination"
-        @analyze="analyze"
+        @analyze="analyzeRoute"
       />
 
       <JourneySummary
@@ -29,6 +29,17 @@
         :departure-display="departureDisplay"
         :eta-display="etaDisplay"
       />
+
+      <RouteIntelligenceSummary
+        :summary="intelligence?.summary ?? null"
+        :recommendation="intelligence?.recommendation ?? null"
+        :explainability="intelligence?.explainability ?? null"
+        :departure-alternatives="departureCompare?.alternatives ?? intelligence?.departure_alternatives ?? []"
+        :eta-label="etaDisplay"
+      />
+
+      <p v-if="intelligenceLoading" class="text-xs text-sky-400">Đang phân tích Route Intelligence...</p>
+      <p v-if="intelligenceError" class="text-xs text-amber-400">{{ intelligenceError }}</p>
 
       <RadarControls
         :enabled="radarEnabled"
@@ -116,15 +127,24 @@
             :traffic-segments="trafficResponse?.segments ?? []"
             :traffic-predictions-for-horizon="trafficPredictionsForHorizon"
             :traffic-model="trafficResponse?.model ?? null"
+            :intelligence-segments="intelligence?.segments ?? []"
+            :selected-intelligence-segment-id="selectedSegmentId"
+            @select-intelligence-segment="selectIntelligenceSegment"
           />
         </ClientOnly>
       </div>
       <WeatherTimeline :points="routeWeather?.timeline ?? []" />
+      <RouteIntelligenceTimeline
+        :segments="intelligence?.segments ?? []"
+        :selected-id="selectedSegmentId"
+        @select="selectIntelligenceSegment"
+      />
     </main>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useRouteIntelligence } from "~/composables/useRouteIntelligence"
 import { useNowcasting } from "~/composables/useNowcasting"
 import { useRainCells } from "~/composables/useRainCells"
 import { useSatellite } from "~/composables/useSatellite"
@@ -153,6 +173,36 @@ const {
   selectDestination,
   analyze,
 } = useRouteWeather()
+
+const {
+  loading: intelligenceLoading,
+  errorMessage: intelligenceError,
+  intelligence,
+  selectedSegmentId,
+  departureCompare,
+  analyze: analyzeIntelligence,
+  compareDepartures,
+  selectSegment: selectIntelligenceSegment,
+} = useRouteIntelligence()
+
+async function analyzeRoute() {
+  await analyze()
+  if (!originSelected.value || !destinationSelected.value || !routeWeather.value) return
+  const req = {
+    origin: originSelected.value.point,
+    destination: destinationSelected.value.point,
+    departure_time: `${departureLocal.value}:00`,
+    travel_mode: travelMode.value,
+    origin_label: originSelected.value.label,
+    destination_label: destinationSelected.value.label,
+    geocode_route_points: true,
+    include_fusion: true,
+    include_traffic: true,
+    include_nowcast: true,
+  }
+  await analyzeIntelligence(req)
+  void compareDepartures(req, [0, 30, 60])
+}
 
 const {
   enabled: radarEnabled,

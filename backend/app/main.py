@@ -58,6 +58,14 @@ try:
         import logging
 
         logging.getLogger(__name__).exception("Traffic router failed to load")
+    try:
+        from app.api.route_intelligence import router as route_intelligence_router
+
+        app.include_router(route_intelligence_router)
+    except Exception:  # noqa: BLE001 - Stage 7 must not take down earlier APIs
+        import logging
+
+        logging.getLogger(__name__).exception("Route intelligence router failed to load")
 except Exception:  # noqa: BLE001 - surface boot failures on Vercel
     import traceback
 
