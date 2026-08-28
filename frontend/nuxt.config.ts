@@ -9,6 +9,7 @@ export default defineNuxtConfig({
     '@nuxtjs/tailwindcss',
     '@pinia/nuxt',
     '@vueuse/nuxt',
+    '@vite-pwa/nuxt',
   ],
 
   runtimeConfig: {
@@ -16,6 +17,52 @@ export default defineNuxtConfig({
       apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || 'http://localhost:8000',
       mapStyleUrl: process.env.NUXT_PUBLIC_MAP_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty',
       enableFusionDebug: process.env.NUXT_PUBLIC_ENABLE_FUSION_DEBUG === 'true',
+    },
+  },
+
+  pwa: {
+    registerType: 'prompt',
+    includeAssets: ['icons/*.png', 'robots.txt'],
+    manifest: {
+      name: 'Route Weather',
+      short_name: 'RouteWeather',
+      description: 'Biết thời tiết trên từng chặng đường',
+      start_url: '/',
+      display: 'standalone',
+      orientation: 'portrait',
+      theme_color: '#0f172a',
+      background_color: '#0f172a',
+      lang: 'vi',
+      icons: [
+        { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+        { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+        { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      ],
+    },
+    workbox: {
+      globPatterns: ['**/*.{js,css,html,png,ico,svg,woff2}'],
+      navigateFallback: '/',
+      runtimeCaching: [
+        {
+          urlPattern: /^https:\/\/tiles\.openfreemap\.org\/.*/i,
+          handler: 'CacheFirst',
+          options: {
+            cacheName: 'map-tiles',
+            expiration: {
+              maxEntries: 200,
+              maxAgeSeconds: 60 * 60 * 24 * 7,
+            },
+          },
+        },
+      ],
+    },
+    client: {
+      installPrompt: 'route-weather-install-dismissed',
+      periodicSyncForUpdates: 3600,
+    },
+    devOptions: {
+      enabled: true,
+      type: 'module',
     },
   },
 
@@ -29,17 +76,7 @@ export default defineNuxtConfig({
         { name: 'apple-mobile-web-app-capable', content: 'yes' },
         { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' },
       ],
-      link: [
-        { rel: 'apple-touch-icon', href: '/icons/icon-192.png' },
-        { rel: 'manifest', href: '/manifest.json' },
-      ],
-      script: [
-        {
-          innerHTML:
-            "if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('/sw.js').catch(()=>{})})}",
-          type: 'text/javascript',
-        },
-      ],
+      link: [{ rel: 'apple-touch-icon', href: '/icons/icon-192.png' }],
     },
   },
 })
