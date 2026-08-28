@@ -102,6 +102,21 @@ class Settings(BaseSettings):
     traffic_rain_nearby_km: float = 8.0
     traffic_base_confidence: float = 0.75
 
+    # Route Intelligence (Stage 7)
+    intelligence_weather_risk_weight: float = 0.55
+    intelligence_traffic_risk_weight: float = 0.45
+    intelligence_worst_of_boost: float = 8.0
+    intelligence_risk_band_low: int = 25
+    intelligence_risk_band_moderate: int = 50
+    intelligence_risk_band_high: int = 75
+    intelligence_vehicle_motorbike_multiplier: float = 1.15
+    intelligence_vehicle_walking_multiplier: float = 1.08
+    intelligence_confidence_neutral_score: float = 40.0
+    intelligence_cache_ttl_seconds: int = 120
+    intelligence_nowcast_horizon_max_minutes: int = 60
+    intelligence_departure_compare_offsets: list[int] = [0, 30, 60]
+    intelligence_traffic_eta_blend: float = 0.35
+
     # Server
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
