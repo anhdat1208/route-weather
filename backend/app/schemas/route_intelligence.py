@@ -87,6 +87,7 @@ class RouteIntelSummary(BaseModel):
     score: float = Field(..., ge=0, le=100)
     worst_segment_id: str | None = None
     worst_segment_index: int | None = None
+    worst_segment_label: str | None = None
     weather_status: WeatherStatus
     traffic_status: str | None = None
     confidence: float = Field(..., ge=0, le=1)

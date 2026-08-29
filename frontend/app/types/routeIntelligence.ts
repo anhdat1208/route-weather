@@ -69,6 +69,7 @@ export interface RouteIntelSummary {
   score: number
   worst_segment_id: string | null
   worst_segment_index: number | null
+  worst_segment_label: string | null
   weather_status: string
   traffic_status: string | null
   confidence: number

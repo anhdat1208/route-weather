@@ -72,6 +72,29 @@ export function formatTime(iso: string): string {
   })
 }
 
+/** Prefer place name; never show raw segment-N IDs to users. */
+export function segmentDisplayLabel(seg: RouteIntelligenceSegment): string {
+  const label = seg.label?.trim()
+  if (label && !/^segment-\d+$/i.test(label)) return label
+  if (seg.index === 0) return "Điểm xuất phát"
+  return `Đoạn ${seg.index + 1}`
+}
+
+export function enrichSegmentsWithTimelineLabels(
+  segments: RouteIntelligenceSegment[],
+  timelineLabels: Array<string | null | undefined>,
+): RouteIntelligenceSegment[] {
+  if (!segments.length) return segments
+  return segments.map((seg, i) => {
+    const fromTimeline = timelineLabels[i]?.trim()
+    if (fromTimeline && !/^segment-\d+$/i.test(fromTimeline)) {
+      return { ...seg, label: fromTimeline }
+    }
+    if (seg.label && !/^segment-\d+$/i.test(seg.label)) return seg
+    return { ...seg, label: segmentDisplayLabel(seg) }
+  })
+}
+
 export function intelligenceSegmentGeoJson(
   segments: RouteIntelligenceSegment[],
   selectedId: string | null,
@@ -97,7 +120,7 @@ export function intelligenceSegmentGeoJson(
 export function formatIntelligencePopup(seg: RouteIntelligenceSegment): string {
   const lineStyle = 'style="color:#e2e8f0;margin:0 0 4px 0"'
   const lines = [
-    `<p ${lineStyle}><strong style="color:#f8fafc">${seg.label || seg.id}</strong></p>`,
+    `<p ${lineStyle}><strong style="color:#f8fafc">${segmentDisplayLabel(seg)}</strong></p>`,
     `<p ${lineStyle}>Đến: ${formatTime(seg.arrival_time)}</p>`,
     `<p ${lineStyle}>Thời tiết: ${rainStatusLabel(seg.weather.rain_status)} (${seg.weather.rain_probability_pct ?? 0}%)</p>`,
   ]
