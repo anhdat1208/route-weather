@@ -24,8 +24,9 @@
     <div class="mt-3 space-y-1 text-xs text-slate-300">
       <p><span class="text-slate-400">Thời tiết:</span> {{ summary.weather_summary }}</p>
       <p><span class="text-slate-400">Giao thông:</span> {{ summary.traffic_summary }}</p>
-      <p v-if="summary.worst_segment_id">
-        <span class="text-slate-400">Đoạn xấu nhất:</span> {{ summary.worst_segment_id }}
+      <p v-if="summary.worst_segment_id || summary.worst_segment_label">
+        <span class="text-slate-400">Đoạn xấu nhất:</span>
+        {{ summary.worst_segment_label || summary.worst_segment_id }}
         <span v-if="summary.worst_condition"> — {{ summary.worst_condition }}</span>
       </p>
     </div>

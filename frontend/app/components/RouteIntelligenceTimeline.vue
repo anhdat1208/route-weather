@@ -15,7 +15,7 @@
         @click="$emit('select', seg.id)"
       >
         <div class="text-xs text-slate-400">{{ formatTime(seg.arrival_time) }}</div>
-        <div class="mt-1 text-sm font-medium">{{ seg.label || seg.id }}</div>
+        <div class="mt-1 text-sm font-medium">{{ segmentDisplayLabel(seg) }}</div>
 
         <div class="mt-2 flex items-center justify-between text-xs">
           <span :style="{ color: riskBandColor(seg.risk.travel_risk_level) }">
@@ -47,6 +47,7 @@ import {
   rainStatusLabel,
   riskBandColor,
   riskBandLabel,
+  segmentDisplayLabel,
 } from "~/utils/routeIntelligence"
 
 defineProps<{

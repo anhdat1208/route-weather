@@ -12,6 +12,7 @@ from app.engine.route_intelligence_engine import (
     _nowcast_rain_at_segment,
     _pick_traffic_prediction,
     _recompute_arrival_times,
+    _segment_display_label,
     _segment_id,
 )
 from app.engine.route_intelligence_risk import (
@@ -178,6 +179,48 @@ def test_worst_segment_detection():
 def test_segment_id_format():
     assert _segment_id(0) == "segment-1"
     assert _segment_id(6) == "segment-7"
+
+
+def test_segment_display_label_prefers_place_name():
+    assert (
+        _segment_display_label(
+            index=3,
+            total=10,
+            existing="QL1, Mỹ Tho",
+            start_distance_km=40,
+            origin_label="A",
+            destination_label="B",
+        )
+        == "QL1, Mỹ Tho"
+    )
+
+
+def test_segment_display_label_falls_back_to_km():
+    assert (
+        _segment_display_label(
+            index=7,
+            total=15,
+            existing=None,
+            start_distance_km=80,
+            origin_label="HCM",
+            destination_label="Trà Vinh",
+        )
+        == "Km 80 trên lộ trình"
+    )
+
+
+def test_segment_display_label_ignores_raw_segment_id():
+    assert (
+        _segment_display_label(
+            index=0,
+            total=5,
+            existing="segment-1",
+            start_distance_km=0,
+            origin_label="30 Dương Bá Trạc",
+            destination_label="Trà Vinh",
+        )
+        == "30 Dương Bá Trạc"
+    )
 
 
 def test_nearest_horizon():

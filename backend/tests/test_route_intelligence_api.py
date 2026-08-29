@@ -52,6 +52,7 @@ def _mock_response() -> RouteIntelligenceResponse:
             score=82,
             worst_segment_id="segment-1",
             worst_segment_index=0,
+            worst_segment_label="Điểm xuất phát",
             weather_status="ok",
             confidence=0.85,
             eta_minutes=15,

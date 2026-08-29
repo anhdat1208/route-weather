@@ -40,6 +40,27 @@ def _segment_id(index: int) -> str:
     return f"segment-{index + 1}"
 
 
+def _segment_display_label(
+    *,
+    index: int,
+    total: int,
+    existing: str | None,
+    start_distance_km: float,
+    origin_label: str | None,
+    destination_label: str | None,
+) -> str:
+    """Human-readable place/position label — never leave raw segment-N for UI."""
+    if existing and not existing.lower().startswith("segment-"):
+        return existing
+    if index == 0 and origin_label:
+        return origin_label
+    if index == total - 1 and destination_label:
+        return destination_label
+    if start_distance_km < 0.5:
+        return origin_label or "Điểm xuất phát"
+    return f"Km {start_distance_km:.0f} trên lộ trình"
+
+
 def _minutes_until(at: datetime, target: datetime) -> float:
     if at.tzinfo is None and target.tzinfo is not None:
         at = at.replace(tzinfo=timezone.utc)
@@ -428,6 +449,15 @@ class RouteIntelligenceEngine:
                 contributors=weather_risk.contributors + traffic_risk_result.contributors,
             )
 
+            display_label = _segment_display_label(
+                index=i,
+                total=len(base_segments),
+                existing=seg.label,
+                start_distance_km=seg.start_distance_km,
+                origin_label=request.origin_label,
+                destination_label=request.destination_label,
+            )
+
             intel_segments.append(
                 RouteIntelligenceSegment(
                     id=_segment_id(i),
@@ -436,7 +466,7 @@ class RouteIntelligenceEngine:
                     distance_m=distance_m,
                     travel_time_seconds=travel_time_s,
                     arrival_time=arrival,
-                    label=seg.label,
+                    label=display_label,
                     weather=weather_intel,
                     traffic=traffic_intel,
                     risk=risk_intel,
@@ -454,9 +484,23 @@ class RouteIntelligenceEngine:
         worst_seg = intel_segments[worst_idx] if worst_idx is not None else None
         worst_condition = None
         if worst_seg:
-            w = worst_seg.weather.rain_status or "unknown"
-            t = worst_seg.traffic.predicted_congestion if worst_seg.traffic else "unknown"
-            worst_condition = f"{w} + {t} traffic"
+            rain_vi = {
+                "clear": "trời quang",
+                "possible_rain": "có thể mưa",
+                "light_rain": "mưa nhẹ",
+                "moderate_rain": "mưa vừa",
+                "heavy_rain": "mưa lớn",
+                "unknown": "thời tiết không rõ",
+            }.get(worst_seg.weather.rain_status or "unknown", worst_seg.weather.rain_status)
+            cong = worst_seg.traffic.predicted_congestion if worst_seg.traffic else None
+            traffic_vi = {
+                "free": "giao thông thông thoáng",
+                "slow": "giao thông chậm",
+                "moderate": "giao thông vừa phải",
+                "heavy": "giao thông tắc",
+                "severe": "giao thông tắc nặng",
+            }.get(cong or "", "giao thông không rõ")
+            worst_condition = f"{rain_vi} + {traffic_vi}"
 
         status: str = "ok"
         if route_weather.weather_status != "ok":
@@ -469,6 +513,7 @@ class RouteIntelligenceEngine:
             score=route_score,
             worst_segment_id=worst_id,
             worst_segment_index=worst_idx,
+            worst_segment_label=worst_seg.label if worst_seg else None,
             weather_status=route_weather.weather_status,
             traffic_status=traffic.status if traffic else None,
             confidence=route_conf,

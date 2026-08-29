@@ -34,7 +34,7 @@
       />
 
       <RouteIntelligenceSummary
-        :summary="intelligence?.summary ?? null"
+        :summary="intelligenceSummaryLabeled"
         :recommendation="intelligence?.recommendation ?? null"
         :explainability="intelligence?.explainability ?? null"
         :departure-alternatives="departureCompare?.alternatives ?? intelligence?.departure_alternatives ?? []"
@@ -103,7 +103,7 @@
       <WeatherTimeline class="md:hidden" :points="routeWeather?.timeline ?? []" />
       <RouteIntelligenceTimeline
         class="md:hidden"
-        :segments="intelligence?.segments ?? []"
+        :segments="intelligenceSegmentsLabeled"
         :selected-id="selectedSegmentId"
         @select="selectIntelligenceSegment"
       />
@@ -138,7 +138,7 @@
             :traffic-segments="trafficResponse?.segments ?? []"
             :traffic-predictions-for-horizon="trafficPredictionsForHorizon"
             :traffic-model="trafficResponse?.model ?? null"
-            :intelligence-segments="intelligence?.segments ?? []"
+            :intelligence-segments="intelligenceSegmentsLabeled"
             :selected-intelligence-segment-id="selectedSegmentId"
             @select-intelligence-segment="selectIntelligenceSegment"
           />
@@ -147,7 +147,7 @@
       <div class="hidden shrink-0 md:block">
         <WeatherTimeline :points="routeWeather?.timeline ?? []" />
         <RouteIntelligenceTimeline
-          :segments="intelligence?.segments ?? []"
+          :segments="intelligenceSegmentsLabeled"
           :selected-id="selectedSegmentId"
           @select="selectIntelligenceSegment"
         />
@@ -165,6 +165,7 @@ import { useTraffic } from "~/composables/useTraffic"
 import { useWeatherFusion } from "~/composables/useWeatherFusion"
 import { nowcastModelLabel } from "~/utils/nowcast"
 import { trafficModelLabel } from "~/utils/traffic"
+import { enrichSegmentsWithTimelineLabels } from "~/utils/routeIntelligence"
 
 const {
   healthOk,
@@ -208,7 +209,8 @@ async function analyzeRoute() {
     travel_mode: travelMode.value,
     origin_label: originSelected.value.label,
     destination_label: destinationSelected.value.label,
-    geocode_route_points: true,
+    // Reuse place names from /api/route-weather timeline; skip reverse-geocode to avoid GraphHopper 429.
+    geocode_route_points: false,
     include_fusion: true,
     include_traffic: true,
     include_nowcast: true,
@@ -291,6 +293,20 @@ const {
 const routeGeometry = computed(() => {
   if (!routeWeather.value?.segments) return null
   return routeWeather.value.segments.flatMap((s) => s.coordinates ?? [])
+})
+
+const intelligenceSegmentsLabeled = computed(() => {
+  const segs = intelligence.value?.segments ?? []
+  const timelineLabels = (routeWeather.value?.timeline ?? []).map((p) => p.label)
+  return enrichSegmentsWithTimelineLabels(segs, timelineLabels)
+})
+
+const intelligenceSummaryLabeled = computed(() => {
+  const summary = intelligence.value?.summary
+  if (!summary) return null
+  const worst = intelligenceSegmentsLabeled.value.find((s) => s.id === summary.worst_segment_id)
+  if (!worst?.label || summary.worst_segment_label) return summary
+  return { ...summary, worst_segment_label: worst.label }
 })
 
 const routeReady = computed(() => (routeGeometry.value?.length ?? 0) >= 2)
